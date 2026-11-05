@@ -62,3 +62,14 @@ def mailbox(db, **extra):
             tuple(values.values())).lastrowid
     store.update_mailbox(db, mailbox_id, {"client_secret": "s", "refresh_token": "r"})
     return store.mailbox(db, mailbox_id)
+
+
+def connection(db, name="Production", **extra):
+    """An Odoo connection that is on, made on first use; returns its id."""
+    found = db.execute("SELECT id FROM odoo_connection WHERE name = ?", (name,)).fetchone()
+    if found:
+        return found["id"]
+    values = {"name": name, "url": "http://odoo.test", "database": "1025", "login": "ocr", "api_key": "k",
+              "is_production": 1, "active": 1}
+    values.update(extra)
+    return store.save_connection(db, None, values)

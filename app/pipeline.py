@@ -4,6 +4,10 @@ or scraped bill they belong to into Odoo.
 An email is marked done only after Odoo accepted its records. A file's AI
 reading is saved as soon as it arrives, so a retry never asks the AI again.
 Waiting emails are tried again each run from those saved readings.
+
+The writes run once per Odoo connection that is on: the AI reading is shared, while
+each connection keeps its own state in message_target and file_target, so a failure
+in one connection is retried there alone.
 """
 
 import json
@@ -22,33 +26,49 @@ SETTING_KEYS = ("openai_api_key", "openai_model", "freight_prompt", "invoice_pro
                 "max_retries", "documents_per_run")
 
 
-def process(db, odoo):
+def process(db, odoo, connection_id):
+    """One pass for one connection: ``odoo`` is logged in to odoo_connection ``connection_id``."""
     settings = {key: store.get_setting(db, key) for key in SETTING_KEYS}
     if not settings["openai_api_key"]:
         _logger.warning("No OpenAI key on the settings page: documents are not read.")
         return
     limit, max_retries = int(settings["documents_per_run"]), int(settings["max_retries"])
-    run = _Run(db, odoo, settings)
+    start_from = db.execute("SELECT start_from FROM odoo_connection WHERE id = ?", (connection_id,)).fetchone()[0]
+    run = _Run(db, odoo, connection_id, settings)
     # New emails first, each state with its own limit: emails waiting for review must never fill
     # the run and starve the newer emails whose bookings they are waiting for.
-    messages = [message for state in ("new", "review") for message in db.execute(
-        "SELECT m.*, mb.purpose, mb.company_id, mb.booking_number_pattern FROM message m "
-        "JOIN mailbox mb ON mb.id = m.mailbox_id WHERE m.state = ? "
-        "ORDER BY m.received, m.id LIMIT ?", (state, limit)).fetchall()]
-    for message in messages:
+    # No row in message_target yet: never processed in this connection, so new there.
+    rows = [row for state in ("new", "review") for row in db.execute(
+        "SELECT m.*, mb.purpose, mb.company_id, mb.booking_number_pattern, t.state AS t_state, "
+        "t.attempts AS t_attempts, t.email_done AS t_email_done FROM message m "
+        "JOIN mailbox mb ON mb.id = m.mailbox_id "
+        "LEFT JOIN message_target t ON t.message_id = m.id AND t.connection_id = ? "
+        "WHERE COALESCE(t.state, CASE m.state WHEN 'skipped' THEN 'skipped' ELSE 'new' END) = ? "
+        "AND COALESCE(m.received, '') >= COALESCE(?, '') "
+        "ORDER BY m.received, m.id LIMIT ?", (connection_id, state, start_from, limit)).fetchall()]
+    for row in rows:
+        message = dict(row, state=row["t_state"] or "new", attempts=row["t_attempts"] or 0,
+                       email_done=row["t_email_done"] or 0)
         try:
             with _source(odoo, message["id"]):
                 run.message(message)
         except Exception as exc:
-            _logger.exception("Email %s failed", message["id"])
+            _logger.exception("Email %s failed in connection %s", message["id"], connection_id)
             attempts = message["attempts"] + 1
-            db.execute("UPDATE message SET attempts = ?, note = ?, state = ? WHERE id = ?",
-                       (attempts, str(exc)[:2000], "failed" if attempts >= max_retries else message["state"],
-                        message["id"]))
+            set_target(db, message["id"], connection_id, attempts=attempts, note=str(exc)[:2000],
+                       state="failed" if attempts >= max_retries else message["state"])
+        store.refresh_messages(db, [message["id"]])
         db.commit()
     for company_id in {row["company_id"] for row in db.execute(
             "SELECT company_id FROM mailbox WHERE purpose = 'bill_matching'")}:
         run.matcher(company_id).rematch_waiting(limit)
+
+
+def set_target(db, message_id, connection_id, **values):
+    """Write an email's state in one connection, making its row there on first use. No commit."""
+    db.execute(f"INSERT INTO message_target (message_id, connection_id, {', '.join(values)}) "
+               f"VALUES (?, ?, {', '.join('?' * len(values))}) ON CONFLICT (message_id, connection_id) DO UPDATE SET "
+               + ", ".join(f"{key} = excluded.{key}" for key in values), (message_id, connection_id, *values.values()))
 
 
 def _source(odoo, message_id, file_id=None):
@@ -59,15 +79,16 @@ def _source(odoo, message_id, file_id=None):
 
 
 class _Run:
-    def __init__(self, db, odoo, settings):
+    def __init__(self, db, odoo, connection_id, settings):
         self.db = db
         self.odoo = odoo
+        self.connection_id = connection_id
         self.settings = settings
         self.mappings = db.execute("SELECT * FROM vendor_mapping WHERE active = 1").fetchall()
         self.formats = db.execute(
             "SELECT * FROM subject_format WHERE active = 1 ORDER BY sequence, id").fetchall()
         self._bookers, self._matchers = {}, {}
-        self.customs = CustomsUploader(db, odoo, int(settings["max_pages"]))
+        self.customs = CustomsUploader(db, odoo, connection_id, int(settings["max_pages"]))
 
     def booker(self, company_id):
         if company_id not in self._bookers:
@@ -82,9 +103,10 @@ class _Run:
     def newest_confirmation(self, doc, booking_id):
         """Whether no booking confirmation already on this booking was received later."""
         later = self.db.execute(
-            "SELECT 1 FROM file f JOIN message m ON m.id = f.message_id WHERE f.odoo_id = ? AND f.id != ? "
-            "AND f.doc_class = 'booking_confirmation' AND f.state = 'done' AND m.received > ? LIMIT 1",
-            (booking_id, doc.get("file_id") or 0, doc["received"] or "")).fetchone()
+            "SELECT 1 FROM file f JOIN message m ON m.id = f.message_id JOIN file_target t ON t.file_id = f.id "
+            "AND t.connection_id = ? WHERE t.odoo_id = ? AND f.id != ? AND f.doc_class = 'booking_confirmation' "
+            "AND t.state = 'done' AND m.received > ? LIMIT 1",
+            (self.connection_id, booking_id, doc.get("file_id") or 0, doc["received"] or "")).fetchone()
         return not later
 
     def message(self, message):
@@ -96,8 +118,10 @@ class _Run:
         base = {"sender": message["sender"] or "", "subject": message["subject"] or "",
                 "received": message["received"]}
         waiting = []
-        for file in self.db.execute("SELECT * FROM file WHERE message_id = ? AND state IN ('new', 'waiting')",
-                                    (message["id"],)).fetchall():
+        for file in self.db.execute(
+                "SELECT f.* FROM file f LEFT JOIN file_target t ON t.file_id = f.id AND t.connection_id = ? "
+                "WHERE f.message_id = ? AND COALESCE(t.state, 'new') IN ('new', 'waiting') ORDER BY f.id",
+                (self.connection_id, message["id"])).fetchall():
             if message["purpose"] == "customs_entry":
                 with _source(self.odoo, message["id"], file["id"]):
                     self._file(file, *self.customs.take(file, message["received"]))
@@ -129,9 +153,9 @@ class _Run:
                 if state == "waiting":
                     waiting.append(f"Email body: {note}")
             if state == "done":
-                self.db.execute("UPDATE message SET email_done = 1 WHERE id = ?", (message["id"],))
-        self.db.execute("UPDATE message SET state = ?, note = ? WHERE id = ?",
-                        ("review" if waiting else "done", "\n".join(waiting) or None, message["id"]))
+                set_target(self.db, message["id"], self.connection_id, email_done=1)
+        set_target(self.db, message["id"], self.connection_id, state="review" if waiting else "done",
+                   note="\n".join(waiting) or None)
 
     def route(self, message, doc):
         if message["purpose"] == "freight_booking":
@@ -143,5 +167,7 @@ class _Run:
         return self.matcher(message["company_id"]).take(doc)
 
     def _file(self, file, state, note, odoo_id=None):
-        self.db.execute("UPDATE file SET state = ?, note = ?, odoo_id = ? WHERE id = ?",
-                        (state, note, odoo_id, file["id"]))
+        self.db.execute(
+            "INSERT INTO file_target (file_id, connection_id, state, note, odoo_id) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (file_id, connection_id) DO UPDATE SET state = excluded.state, note = excluded.note, "
+            "odoo_id = excluded.odoo_id", (file["id"], self.connection_id, state, note, odoo_id))

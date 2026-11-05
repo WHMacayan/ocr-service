@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=10">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=11">
 </head>
 <body>
 {% set here = request.path %}
@@ -58,7 +58,17 @@
   </aside>
   <div class="scrim" data-menu-close></div>
 
-  <main class="main">{% block content %}{% endblock %}</main>
+  <main class="main">
+    {% set production_on = connections_on|selectattr("is_production")|list %}
+    {% set others_on = connections_on|rejectattr("is_production")|list %}
+    {% if connections_on %}
+    <a class="env-bar {{ 'prod' if production_on else '' }}" href="{{ url_for('web.settings') }}">
+      {% if production_on %}<b>Writing to PRODUCTION: {{ production_on|map(attribute="name")|join(", ") }}</b>{% endif %}
+      {% if others_on %}<span>{{ "Also writing to" if production_on else "Writing to" }} {{ others_on|map(attribute="name")|join(", ") }}</span>{% endif %}
+    </a>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
 </div>
 
 <div class="palette" id="palette" hidden>

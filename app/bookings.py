@@ -7,6 +7,8 @@ other than what the service last wrote: a person changed it, or something else d
 
 import json
 
+from .store import reference_changes
+
 BOOKING = "b2b.ocr.booking"
 
 # The Odoo form's sections, in its order.
@@ -34,7 +36,9 @@ _fields_cache = {}
 
 def booking_ids(db):
     """Every booking the service has touched: recorded changes, and files from before they were recorded."""
-    ids = {r[0] for r in db.execute("SELECT DISTINCT record_id FROM odoo_change WHERE model = ?", (BOOKING,))}
+    mine, args = reference_changes(db)
+    ids = {r[0] for r in db.execute(f"SELECT DISTINCT record_id FROM odoo_change c WHERE model = ? AND {mine}",
+                                    (BOOKING, *args))}
     ids |= {r[0] for r in db.execute(
         "SELECT DISTINCT f.odoo_id FROM file f JOIN message m ON m.id = f.message_id JOIN mailbox b "
         "ON b.id = m.mailbox_id WHERE f.odoo_id IS NOT NULL AND b.purpose = 'freight_booking'")}
@@ -46,12 +50,13 @@ def service_values(db, booking_ids_):
     if not booking_ids_:
         return {}
     marks = ", ".join("?" * len(booking_ids_))
+    mine, args = reference_changes(db)
     out = {}
     for r in db.execute(
             f"SELECT c.record_id, c.values_json, c.at, c.message_id, f.filename, m.subject FROM odoo_change c "
             f"JOIN message m ON m.id = c.message_id LEFT JOIN file f ON f.id = c.file_id "
-            f"WHERE c.model = ? AND c.record_id IN ({marks}) AND c.values_json IS NOT NULL ORDER BY c.id",
-            (BOOKING, *booking_ids_)):
+            f"WHERE c.model = ? AND c.record_id IN ({marks}) AND c.values_json IS NOT NULL AND {mine} ORDER BY c.id",
+            (BOOKING, *booking_ids_, *args)):
         for field, value in json.loads(r["values_json"]).items():
             out.setdefault(r["record_id"], {})[field] = {
                 "value": value, "at": r["at"], "message_id": r["message_id"],
@@ -61,11 +66,12 @@ def service_values(db, booking_ids_):
 
 def emails(db, booking_id):
     """The emails that fed this booking, newest first."""
+    mine, args = reference_changes(db)
     return db.execute(
         "SELECT DISTINCT m.id, m.subject, m.sender, m.received, m.state FROM message m WHERE m.id IN ("
-        " SELECT message_id FROM odoo_change WHERE model = ? AND record_id = ?"
+        f" SELECT message_id FROM odoo_change c WHERE model = ? AND record_id = ? AND {mine}"
         " UNION SELECT f.message_id FROM file f WHERE f.odoo_id = ?) ORDER BY m.received DESC",
-        (BOOKING, booking_id, booking_id)).fetchall()
+        (BOOKING, booking_id, *args, booking_id)).fetchall()
 
 
 def fields_info(odoo, model):
@@ -143,9 +149,10 @@ def read_odoo(odoo, booking_id):
 
 def created_children(db, booking_id):
     """Child records (containers, B/Ls…) the service created, by (model, id): the email they came from."""
+    mine, args = reference_changes(db)
     rows = db.execute(
         "SELECT c.model, c.record_id, c.message_id, c.values_json, f.filename FROM odoo_change c "
-        "LEFT JOIN file f ON f.id = c.file_id WHERE c.action = 'created' AND c.model != ? AND c.values_json LIKE ?",
-        (BOOKING, f'%"booking_id": {booking_id}%')).fetchall()
+        "LEFT JOIN file f ON f.id = c.file_id WHERE c.action = 'created' AND c.model != ? AND c.values_json LIKE ? "
+        f"AND {mine}", (BOOKING, f'%"booking_id": {booking_id}%', *args)).fetchall()
     return {(r["model"], r["record_id"]): r for r in rows
             if json.loads(r["values_json"]).get("booking_id") == booking_id}

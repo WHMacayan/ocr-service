@@ -44,15 +44,19 @@ def read_mailboxes(db, now=None, after_each=None):
 
 
 def process_files(db):
-    """Hand the new files to the pipeline, which writes the results to Odoo."""
-    try:
-        odoo = Odoo.from_store(db)
-    except Exception as exc:
-        _logger.warning("Cannot reach Odoo, the files wait for the next run: %s", exc)
-        return
+    """Hand the new files to the pipeline once per Odoo connection that is on. A connection that
+    cannot be reached is left for the next run; the others carry on."""
     before = {row["id"]: (row["state"], row["note"]) for row in db.execute(
         "SELECT id, state, note FROM message WHERE state IN ('new', 'review')")}
-    process(db, odoo)
+    for connection in store.connections(db, on=True):
+        if not store.is_complete(connection):
+            continue
+        try:
+            odoo = Odoo.from_connection(db, connection)
+        except Exception as exc:
+            _logger.warning("Cannot reach Odoo %s, its files wait for the next run: %s", connection["name"], exc)
+            continue
+        process(db, odoo, connection["id"])
     log_outcomes(db, before)
 
 

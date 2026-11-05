@@ -1,6 +1,6 @@
 from app import search, store
 
-from fakes import mailbox
+from fakes import connection, mailbox
 from test_store_web import client, signed_in  # noqa: F401  (fixtures)
 
 
@@ -58,7 +58,9 @@ def test_like_wildcards_are_literal(db):
 
 def test_settings_and_pages_are_found(db):
     groups = search.run(db, "api key")
-    assert "API key" in titles(groups, "settings") and "OpenAI API key" in titles(groups, "settings")
+    assert "Odoo connections" in titles(groups, "settings") and "OpenAI API key" in titles(groups, "settings")
+    connection(db, "Staging (1103)", database="1103")
+    assert titles(search.run(db, "1103"), "settings") == ["Staging (1103)"]
     assert titles(search.run(db, "password"), "pages") == ["Change password"]
 
 

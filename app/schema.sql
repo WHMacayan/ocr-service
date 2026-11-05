@@ -53,6 +53,21 @@ CREATE TABLE IF NOT EXISTS mailbox (
     group_miss_note TEXT
 );
 
+-- The Odoo databases the service writes to. Every connection that is on gets the same writes.
+CREATE TABLE IF NOT EXISTS odoo_connection (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    url TEXT,
+    database TEXT,
+    login TEXT,
+    api_key TEXT,                                      -- encrypted
+    is_production INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 0,                 -- on: only once complete and its mappings check out
+    start_from TEXT,                                   -- mail received before this is never written to it
+    last_check_at TEXT,
+    last_check_note TEXT
+);
+
 CREATE TABLE IF NOT EXISTS message (
     id INTEGER PRIMARY KEY,
     mailbox_id INTEGER NOT NULL REFERENCES mailbox(id),
@@ -90,6 +105,29 @@ CREATE TABLE IF NOT EXISTS file (
 );
 CREATE INDEX IF NOT EXISTS file_message ON file (message_id);
 
+-- Where an email and its files stand in each Odoo connection. No row yet: not processed there.
+-- message.state and file.state/note/odoo_id summarise these for the lists (see store.refresh_messages).
+CREATE TABLE IF NOT EXISTS message_target (
+    message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+    connection_id INTEGER NOT NULL REFERENCES odoo_connection(id) ON DELETE CASCADE,
+    state TEXT NOT NULL DEFAULT 'new',                 -- new | done | review | failed
+    attempts INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    email_done INTEGER NOT NULL DEFAULT 0,
+    processed_at TEXT,
+    PRIMARY KEY (message_id, connection_id)
+);
+
+CREATE TABLE IF NOT EXISTS file_target (
+    file_id INTEGER NOT NULL REFERENCES file(id) ON DELETE CASCADE,
+    connection_id INTEGER NOT NULL REFERENCES odoo_connection(id) ON DELETE CASCADE,
+    state TEXT NOT NULL DEFAULT 'new',                 -- new | done | skipped | waiting | failed
+    note TEXT,
+    odoo_id INTEGER,
+    PRIMARY KEY (file_id, connection_id)
+);
+CREATE INDEX IF NOT EXISTS file_target_odoo ON file_target (connection_id, odoo_id);
+
 -- Every record the service created or changed in Odoo, against the email (and file) it came from.
 CREATE TABLE IF NOT EXISTS odoo_change (
     id INTEGER PRIMARY KEY,
@@ -105,6 +143,7 @@ CREATE TABLE IF NOT EXISTS odoo_change (
     link TEXT                                          -- the record in Odoo
 );
 CREATE INDEX IF NOT EXISTS odoo_change_message ON odoo_change (message_id);
+-- odoo_change.connection_id (added in store.ADDED_COLUMNS): the connection the change was written to.
 
 CREATE TABLE IF NOT EXISTS run (
     id INTEGER PRIMARY KEY,

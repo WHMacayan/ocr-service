@@ -1,4 +1,5 @@
-"""The settings on the Settings page. Every setting lives in SQLite, none in the environment."""
+"""The settings on the Settings page. Every setting lives in SQLite, none in the environment.
+The Odoo connections have their own table (store.connections)."""
 
 from collections import namedtuple
 
@@ -6,23 +7,12 @@ from collections import namedtuple
 Setting = namedtuple("Setting", "key label kind help group tip", defaults=("text", "", "", ""))
 
 SETTING_GROUPS = {
-    "Odoo": "Where the suggestions are written. Use the login of the Odoo user and an API key made by that user.",
     "AI": "The model that reads the documents, and what it is asked.",
     "Processing": "How much is read per file and per run, and when an email is given up.",
     "Worker": "How often the mailboxes are checked, and how long the activity log is kept.",
 }
 
 SETTINGS = [
-    Setting("odoo_url", "Odoo address", "text", "For example http://katana.local", "Odoo",
-            "The web address of your Odoo. The service sends booking and bill suggestions there."),
-    Setting("odoo_db", "Database", "text", "", "Odoo",
-            "The Odoo database the suggestions go into, for example 1025."),
-    Setting("odoo_user", "Login", "text", "The user's login in Odoo (Settings > Users), not the display name", "Odoo",
-            "The Odoo user the service signs in as. Everything it writes in Odoo is recorded under this user, "
-            "and it can only do what this user is allowed to do."),
-    Setting("odoo_api_key", "API key", "secret", "Odoo: Preferences > Account Security > New API Key", "Odoo",
-            "Lets the service sign in to Odoo without a password. It must be made by the user above. "
-            "Delete the key in Odoo to cut the service off at once."),
     Setting("openai_api_key", "OpenAI API key", "secret", "", "AI",
             "Lets the service use OpenAI to read the attached documents. Without it, emails are still saved "
             "but their files are not read."),

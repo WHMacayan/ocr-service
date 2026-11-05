@@ -52,6 +52,53 @@
 <div style="height:20px"></div>
 {% endif %}
 
+{% if extra == "settings" %}
+<section class="card table-card">
+  <div class="card-head">
+    <div><h2>Odoo connections</h2>
+      <p>Where the suggestions are written. Every connection that is on gets the same bookings, bills and customs
+        uploads; the documents are read by the AI once. Pages and links read Odoo through
+        {% if reference %}<b>{{ reference.name }}</b>{% else %}the first connection that is on{% endif %}.</p></div>
+    <div class="actions"><a class="btn secondary" href="{{ url_for('web.connection') }}">{{ icon("plus") }} Add connection</a></div>
+  </div>
+  {% if connections %}
+  <table class="data">
+    <thead><tr><th>Connection</th><th>Status</th><th>Database</th><th>Gets mail from</th><th></th></tr></thead>
+    <tbody>
+    {% for c in connections %}
+    {% set complete = c.url and c.database and c.login and c.api_key %}
+    <tr>
+      <td class="cell-main"><a class="primary" href="{{ url_for('web.connection', connection_id=c.id) }}">{{ c.name }}</a>
+        {% if c.is_production %}<span class="badge failed prod-badge">Production</span>{% endif %}
+        <span class="sub">{{ c.url or "No address yet" }}</span></td>
+      <td data-label="Status">
+        {% if c.active %}<span class="badge ok">On</span>
+        {% elif not complete %}<span class="badge muted-badge" title="Fill in the address, database, login and API key">Incomplete</span>
+        {% elif c.last_check_note %}<span class="badge failed" title="{{ c.last_check_note }}">Check failed</span>
+        {% else %}<span class="badge muted-badge">Off</span>{% endif %}</td>
+      <td data-label="Database">{{ c.database or "" }}</td>
+      <td data-label="Gets mail from">{% if c.active %}{{ (c.start_from or "")[:10] or "All mail" }}{% endif %}</td>
+      <td class="row-actions">
+        {% if c.active %}
+        <form method="post" action="{{ url_for('web.connection_off', connection_id=c.id) }}"
+              {% if c.is_production %}data-confirm="Turn off {{ c.name }}? Nothing more is written to production until it is turned on again."{% endif %}>
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn secondary sm">Turn off</button></form>
+        {% elif complete %}
+        <a class="btn sm" href="{{ url_for('web.connection_on', connection_id=c.id) }}">Turn on</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="card-body" style="color:var(--text-3)">No Odoo connection yet. Add one, fill it in, and turn it on: until then
+    the emails are read and saved, but nothing is written to Odoo.</div>
+  {% endif %}
+</section>
+<div style="height:20px"></div>
+{% endif %}
+
 <form method="post" action="{{ action }}" id="record-form" novalidate>
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {% for title_, description, fields in sections %}
@@ -135,9 +182,6 @@
             <button type="button" class="btn secondary" data-copy="redirect-uri">{{ icon("copy") }} Copy</button></div>
           <div class="help">Add this to the Azure app under Authentication before connecting.</div>
         </div>
-        {% endif %}
-        {% if extra == "settings" and title_ == "Odoo" %}
-        <div class="field wide"><button class="btn secondary" name="then" value="test-odoo">{{ icon("plug") }} Save and test the connection</button></div>
         {% endif %}
       </div>
     </div>

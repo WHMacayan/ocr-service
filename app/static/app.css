@@ -485,3 +485,15 @@ pre.block { margin: 0; white-space: pre-wrap; word-break: break-word; font: 13px
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ── Odoo connections ──────────────────────────────────────────── */
+
+.env-bar { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin: -12px 0 24px; padding: 10px 14px;
+           border-radius: var(--radius-sm); border: 1px solid var(--idle-line); background: var(--idle-soft);
+           color: var(--idle); font-size: 13.5px; text-decoration: none; }
+.env-bar.prod { background: var(--bad); border-color: var(--bad); color: #FFFFFF; }
+.env-bar.prod span { opacity: .9; }
+.prod-badge { margin-left: 8px; vertical-align: 1px; }
+.data td.row-actions { text-align: right; white-space: nowrap; }
+.callout.ok-callout { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-line); }
+.danger-card form.actions input { width: 200px; }

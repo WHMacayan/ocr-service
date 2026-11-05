@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from . import store
-from .store import get_setting
 
 TIMEOUT_SECONDS = 120
 # Odoo stores datetimes as naive UTC in this format.
@@ -56,11 +55,13 @@ class Odoo:
     """activity_db: when set, every create, write and unlink is recorded in the activity log,
     and, inside working_on(), against the email (and file) being processed."""
 
-    def __init__(self, url, db, user, api_key, activity_db=None):
+    def __init__(self, url, db, user, api_key, activity_db=None, connection_id=None, name=None):
         self.url = url
         self.db = db
         self.api_key = api_key
         self.activity_db = activity_db
+        self.connection_id = connection_id  # the odoo_connection its writes are recorded against
+        self.name = name
         self.source = None  # (message id, file id) the writes are for
         self.uid = _proxy(f"{url}/xmlrpc/2/common").authenticate(db, user, api_key, {})
         if not self.uid:
@@ -69,13 +70,21 @@ class Odoo:
         self._object = _proxy(f"{url}/xmlrpc/2/object")
 
     @classmethod
+    def from_connection(cls, db, connection):
+        """Log in with one connection from the Settings page (a row of store.connections)."""
+        if not store.is_complete(connection):
+            raise RuntimeError(f"The Odoo connection {connection['name']} is not filled in on the Settings page.")
+        return cls(connection["url"].strip().rstrip("/"), connection["database"].strip(), connection["login"].strip(),
+                   connection["api_key"].strip(), activity_db=db, connection_id=connection["id"],
+                   name=connection["name"])
+
+    @classmethod
     def from_store(cls, db):
-        """Log in with the connection on the Settings page."""
-        values = [get_setting(db, key) for key in ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key")]
-        if not all(values):
-            raise RuntimeError("The Odoo connection is not filled in on the Settings page.")
-        url, *rest = values
-        return cls(url.rstrip("/"), *rest, activity_db=db)
+        """Log in with the connection the pages read Odoo through (store.reference_connection)."""
+        connection = store.reference_connection(db)
+        if not connection:
+            raise RuntimeError("No Odoo connection is switched on. Turn one on in Settings.")
+        return cls.from_connection(db, connection)
 
     def call(self, model, method, *args, **kwargs):
         result = self._object.execute_kw(self.db, self.uid, self.api_key, model, method,
@@ -114,16 +123,18 @@ class Odoo:
             values = values[0] if values else {}
         label = self._label(model, ids, values) if method != "unlink" else ""
         name = MODEL_NAMES.get(model, model)
-        summary = f"{WRITE_METHODS[method]} {name} {', '.join(f'#{i}' for i in ids)}" + (f" ({label})" if label else "")
+        prefix = f"[{self.name}] " if getattr(self, "name", None) else ""
+        summary = f"{prefix}{WRITE_METHODS[method]} {name} {', '.join(f'#{i}' for i in ids)}" + (f" ({label})" if label else "")
         detail = "\n".join(f"{field}: {_short(value)}" for field, value in values.items()) if values else None
         link = f"{self.url}/web#model={model}&id={ids[0]}&view_type=form" if len(ids) == 1 and method != "unlink" else None
         store.log_activity(self.activity_db, "odoo", summary, detail, actor="worker", link=link)
         if self.source:
             # No commit here: it lands with the pipeline's own commit for this email.
             self.activity_db.executemany(
-                "INSERT INTO odoo_change (message_id, file_id, action, model, record_id, label, detail, link,"
-                " values_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [(*self.source, WRITE_METHODS[method].lower(), model, record_id, label, detail,
+                "INSERT INTO odoo_change (message_id, file_id, connection_id, action, model, record_id, label, detail,"
+                " link, values_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(*self.source, getattr(self, "connection_id", None), WRITE_METHODS[method].lower(), model, record_id,
+                  label, detail,
                   f"{self.url}/web#model={model}&id={record_id}&view_type=form" if method != "unlink" else None,
                   json.dumps(values, default=str) if values else None)
                  for record_id in ids])

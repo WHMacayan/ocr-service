@@ -3,6 +3,7 @@
 import pytest
 
 from app import customs, pipeline, store
+from fakes import connection
 from test_pipeline_end_to_end import ai, email, odoo, row  # noqa: F401 (ai is a fixture)
 
 FORM_7501 = ("DEPARTMENT OF HOMELAND SECURITY OMB CONTROL NUMBER 1651-0022\nU.S. Customs and Border Protection\n"
@@ -42,7 +43,7 @@ def test_entry_summary_becomes_an_entry_in_the_days_batch(db, tmp_path, ai, text
     message_id = customs_email(db, tmp_path)
     texts.current = FORM_7501
     fake = odoo()
-    pipeline.process(db, fake)
+    pipeline.process(db, fake, connection(db))
 
     [(entry_id, entry)] = fake.rows("cbp7501.entry").items()
     [(batch_id, batch)] = fake.rows("cbp7501.audit.batch").items()
@@ -59,12 +60,12 @@ def test_same_entry_number_again_and_other_pdfs_are_skipped(db, tmp_path, ai, te
     fake = odoo()
     texts.current = FORM_7501
     customs_email(db, tmp_path, received="2026-10-27 23:20:24")
-    pipeline.process(db, fake)
+    pipeline.process(db, fake, connection(db))
     again = customs_email(db, tmp_path)
-    pipeline.process(db, fake)
+    pipeline.process(db, fake, connection(db))
     texts.current = INVOICE
     invoice = customs_email(db, tmp_path, received="2026-10-29 08:00:00")
-    pipeline.process(db, fake)
+    pipeline.process(db, fake, connection(db))
 
     assert len(fake.rows("cbp7501.entry")) == 1 and len(fake.rows("cbp7501.audit.batch")) == 1
     note = lambda message_id: db.execute("SELECT state, note FROM file WHERE message_id = ?",  # noqa: E731

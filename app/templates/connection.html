@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% macro tip(f) %}{% if f.tip %}<span class="tip">
+  <button type="button" class="tip-btn" aria-label="What is {{ f.label }} for?" aria-describedby="tip-{{ f.name }}">{{ icon("info") }}</button>
+  <span class="tip-text" role="tooltip" id="tip-{{ f.name }}">{{ f.tip }}</span></span>{% endif %}{% endmacro %}
+{% block content %}
+{% set is_new = not connection_id %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="{{ url_for('web.settings') }}">Settings</a>{{ icon("chevron") }}<span>Odoo connection</span></div>
+    <div class="title-line"><h1>{{ record.name or "New Odoo connection" }}</h1>
+      {% if record.is_production %}<span class="badge failed">Production</span>{% endif %}
+      {% if not is_new %}<span class="badge {{ 'ok' if record.active else 'muted-badge' }}">{{ "On" if record.active else ("Off" if complete else "Incomplete") }}</span>{% endif %}</div>
+  </div>
+  {% if not is_new %}
+  <div class="actions">
+    {% if record.active %}
+    <form method="post" action="{{ url_for('web.connection_off', connection_id=connection_id) }}"
+          {% if record.is_production %}data-confirm="Turn off {{ record.name }}? Nothing more is written to production until it is turned on again."{% endif %}>
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="next" value="{{ url_for('web.connection', connection_id=connection_id) }}">
+      <button class="btn secondary">Turn off</button></form>
+    {% elif complete %}
+    <a class="btn" href="{{ url_for('web.connection_on', connection_id=connection_id) }}">Turn on</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if record.last_check_note and not record.active %}
+<div class="callout bad" style="margin-bottom:20px">{{ icon("alert") }}<span><b>Last check{% if record.last_check_at %} ({{ record.last_check_at }} UTC){% endif %}:</b>
+  <span style="white-space:pre-line">{{ record.last_check_note }}</span></span></div>
+{% endif %}
+{% if not is_new and not complete %}
+<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Incomplete: this connection is not used until the
+  address, database, login and API key are all filled in.</span></div>
+{% endif %}
+
+<form method="post" action="{{ request.path }}" id="record-form" novalidate>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <section class="card">
+    <div class="card-head"><div><h2>Connection</h2>
+      <p>Use the login of the Odoo user and an API key made by that user. Leave the details blank to keep the
+        connection without using it.</p></div></div>
+    <div class="card-body">
+      <div class="form-grid">
+        {% for f in fields %}
+        {% set value = record.get(f.name) %}
+        <div class="field">
+          {% if f.kind == "bool" %}
+            <label class="switch"><input type="checkbox" name="{{ f.name }}" {% if value %}checked{% endif %}>
+              <span><b>{{ f.label }}{{ tip(f) }}</b>{% if f.help %}<span class="help">{{ f.help }}</span>{% endif %}</span></label>
+          {% elif f.kind == "secret" %}
+            <span class="label"><span id="{{ f.name }}-label">{{ f.label }}</span>{{ tip(f) }}</span>
+            {% if hints.get(f.name) %}
+            <div class="secret-saved" data-saved="{{ f.name }}">
+              <span class="tick">{{ icon("check") }}</span><span>Saved, ends in <code>{{ hints[f.name] }}</code></span>
+              <button type="button" class="btn secondary sm" data-replace="{{ f.name }}">Replace</button>
+            </div>
+            {% endif %}
+            <div class="secret-input" data-input="{{ f.name }}" {% if hints.get(f.name) %}hidden{% endif %}>
+              <input type="password" id="{{ f.name }}" name="{{ f.name }}" autocomplete="new-password"
+                     aria-labelledby="{{ f.name }}-label" placeholder="{{ 'Paste the new value' if hints.get(f.name) else 'Paste the value' }}">
+              <button type="button" class="btn secondary" data-reveal="{{ f.name }}">Show</button>
+              {% if hints.get(f.name) %}<button type="button" class="btn ghost" data-keep="{{ f.name }}">Cancel</button>{% endif %}
+            </div>
+            {% if f.help %}<div class="help">{{ f.help }}</div>{% endif %}
+          {% else %}
+            <div class="label-line"><label for="{{ f.name }}">{{ f.label }}</label>{{ tip(f) }}</div>
+            <input type="text" id="{{ f.name }}" name="{{ f.name }}" value="{{ value or '' }}">
+            {% if f.help %}<div class="help">{{ f.help }}</div>{% endif %}
+          {% endif %}
+        </div>
+        {% endfor %}
+        <div class="field wide"><button class="btn secondary" name="then" value="test">{{ icon("plug") }} Save and test the connection</button>
+          <div class="help">Signs in and checks that the companies, partners and products the mailboxes and vendor
+            mappings use exist in this Odoo{% if record.active %}. If they no longer check out, the connection is turned off{% endif %}.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="savebar {{ 'show' if is_new else '' }}" id="savebar" role="region" aria-label="Save">
+    <span>{{ "New Odoo connection" if is_new else "You have unsaved changes" }}</span>
+    <div class="actions">
+      {% if is_new %}<a class="btn ghost" href="{{ url_for('web.settings') }}">Cancel</a>
+      {% else %}<button type="button" class="btn ghost" data-discard>Discard</button>{% endif %}
+      <button class="btn">{{ "Create connection" if is_new else "Save changes" }}</button>
+    </div>
+  </div>
+</form>
+
+{% if not is_new %}
+<div class="card" style="margin-top:20px">
+  <div class="card-body danger-card">
+    <div><h2>Delete connection</h2>
+      <p>{% if record.active %}Turn the connection off before deleting it.{% else %}Removes the connection and the service's
+        record of what each email wrote to it. Records in that Odoo are not touched. Type <b>{{ record.name }}</b> to confirm.{% endif %}</p></div>
+    {% if not record.active %}
+    <form class="actions" method="post" action="{{ url_for('web.delete_connection', connection_id=connection_id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="text" name="confirm_name" aria-label="Type the connection's name to confirm" placeholder="{{ record.name }}" autocomplete="off">
+      <button class="btn danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

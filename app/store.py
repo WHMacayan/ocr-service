@@ -59,12 +59,41 @@ def connect(path=None):
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         db.executemany("INSERT OR IGNORE INTO setting (key, value) VALUES (?, ?)",
                        defaults.DEFAULT_SETTINGS.items())
+        _move_single_connection(db)
     return db
 
 
 # Columns added to tables after their first release: CREATE TABLE IF NOT EXISTS leaves existing tables as they are.
 ADDED_COLUMNS = [("message", "processed_at", "TEXT"), ("odoo_change", "values_json", "TEXT"),
-                 ("mailbox", "sender_domains", "TEXT")]
+                 ("mailbox", "sender_domains", "TEXT"),
+                 ("odoo_change", "connection_id", "INTEGER REFERENCES odoo_connection(id) ON DELETE CASCADE")]
+
+# The one Odoo connection the Settings page held before there were several.
+OLD_CONNECTION_SETTINGS = ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key")
+
+
+def _move_single_connection(db):
+    """The Settings page's one connection becomes a connection named Production, on when complete,
+    with every email's history so far. Runs inside connect()'s transaction: all of it or none."""
+    marks = ", ".join("?" * len(OLD_CONNECTION_SETTINGS))
+    old = {row["key"]: row["value"] for row in db.execute(
+        f"SELECT key, value FROM setting WHERE key IN ({marks})", OLD_CONNECTION_SETTINGS)}
+    if not old:
+        return
+    if any(old.values()) and not db.execute("SELECT 1 FROM odoo_connection").fetchone():
+        url, database, login, api_key = (old.get(key) or None for key in OLD_CONNECTION_SETTINGS)
+        # The API key was encrypted with the same secret.key: it moves as it is.
+        connection_id = db.execute(
+            "INSERT INTO odoo_connection (name, url, database, login, api_key, is_production, active) "
+            "VALUES ('Production', ?, ?, ?, ?, 1, ?)",
+            (url, database, login, api_key, int(all((url, database, login, api_key))))).lastrowid
+        db.execute("INSERT INTO message_target (message_id, connection_id, state, attempts, note, email_done, "
+                   "processed_at) SELECT id, ?, state, attempts, note, email_done, processed_at FROM message "
+                   "WHERE state != 'skipped'", (connection_id,))
+        db.execute("INSERT INTO file_target (file_id, connection_id, state, note, odoo_id) "
+                   "SELECT id, ?, state, note, odoo_id FROM file WHERE state != 'new'", (connection_id,))
+        db.execute("UPDATE odoo_change SET connection_id = ? WHERE connection_id IS NULL", (connection_id,))
+    db.execute(f"DELETE FROM setting WHERE key IN ({marks})", OLD_CONNECTION_SETTINGS)
 
 
 def files_dir(db):
@@ -148,3 +177,98 @@ def update_mailbox(db, mailbox_id, values):
     with db:
         db.execute(f"UPDATE mailbox SET {', '.join(f'{key} = ?' for key in values)} WHERE id = ?",
                    (*values.values(), mailbox_id))
+
+
+# ── Odoo connections ─────────────────────────────────────────────────
+
+CONNECTION_FIELDS = ("url", "database", "login", "api_key")
+# Production first: it is written first and is the one the pages read Odoo through.
+CONNECTION_ORDER = "is_production DESC, name COLLATE NOCASE, id"
+
+
+def connection(db, connection_id):
+    """One connection as a dict with its API key decrypted."""
+    row = db.execute("SELECT * FROM odoo_connection WHERE id = ?", (connection_id,)).fetchone()
+    if not row:
+        return None
+    return dict(row, api_key=decrypt(db, row["api_key"]))
+
+
+def connections(db, on=False):
+    """Every connection, or only those switched on, in writing order, API keys decrypted."""
+    return [connection(db, row["id"]) for row in db.execute(
+        f"SELECT id FROM odoo_connection {'WHERE active = 1' if on else ''} ORDER BY {CONNECTION_ORDER}")]
+
+
+def is_complete(values):
+    """All four details filled in. An incomplete connection is never used and never complains."""
+    return all((values.get(field) or "").strip() for field in CONNECTION_FIELDS)
+
+
+def reference_connection(db):
+    """The connection the pages read Odoo through and link to: the first production connection
+    that is on, else the first connection that is on; None when none is on."""
+    on = connections(db, on=True)
+    return on[0] if on else None
+
+
+def reference_changes(db, alias="c"):
+    """SQL condition and parameters keeping the odoo_change rows of the reference connection, and
+    those recorded before connections were. Every row when no connection is on."""
+    reference = reference_connection(db)
+    if not reference:
+        return "1 = 1", ()
+    return f"({alias}.connection_id IS NULL OR {alias}.connection_id = ?)", (reference["id"],)
+
+
+def save_connection(db, connection_id, values):
+    """Write connection fields, encrypting the API key. Returns the connection's id."""
+    values = {key: encrypt(db, value) if key == "api_key" else value for key, value in values.items()}
+    with db:
+        if connection_id:
+            if values:
+                db.execute(f"UPDATE odoo_connection SET {', '.join(f'{key} = ?' for key in values)} WHERE id = ?",
+                           (*values.values(), connection_id))
+            return connection_id
+        return db.execute(f"INSERT INTO odoo_connection ({', '.join(values)}) VALUES ({', '.join('?' * len(values))})",
+                          tuple(values.values())).lastrowid
+
+
+# Which of an email's states the lists show when its connections disagree: the one needing a person first.
+SUMMARY_ORDER = ("failed", "review", "new", "done")
+
+
+def refresh_messages(db, message_ids=None):
+    """Bring the summary on message and file in line with their state per connection: the email's
+    state is the one most in need of a person, its files show what happened in the reference connection.
+    A connection that is on but has not processed a due email yet counts as Queued. No commit."""
+    on = db.execute(f"SELECT id, name, start_from FROM odoo_connection WHERE active = 1 "
+                    f"ORDER BY {CONNECTION_ORDER}").fetchall()
+    names = dict(db.execute("SELECT id, name FROM odoo_connection").fetchall())
+    ranks = {row["id"]: rank for rank, row in enumerate(on)}
+    if message_ids is None:
+        message_ids = [row[0] for row in db.execute("SELECT id FROM message")]
+    for message_id in message_ids:
+        message = db.execute("SELECT state, received FROM message WHERE id = ?", (message_id,)).fetchone()
+        if not message:
+            continue
+        targets = db.execute("SELECT * FROM message_target WHERE message_id = ?", (message_id,)).fetchall()
+        if message["state"] == "skipped" and not targets:
+            continue  # skipped when it was read: never processed anywhere
+        done_in = {t["connection_id"] for t in targets}
+        states = [t["state"] for t in targets] + [
+            "new" for c in on if c["id"] not in done_in and (message["received"] or "") >= (c["start_from"] or "")]
+        if not states:
+            continue
+        notes = [(names.get(t["connection_id"], "?"), t["note"]) for t in targets if t["note"]]
+        note = notes[0][1] if len(targets) == 1 and notes else "\n".join(f"{name}: {text}" for name, text in notes)
+        db.execute("UPDATE message SET state = ?, note = ?, attempts = ?, email_done = ? WHERE id = ?",
+                   (next((s for s in SUMMARY_ORDER if s in states), states[0]), note or None,
+                    max((t["attempts"] for t in targets), default=0),
+                    int(bool(targets) and all(t["email_done"] for t in targets)), message_id))
+        for file in db.execute("SELECT id FROM file WHERE message_id = ?", (message_id,)).fetchall():
+            shown = min(db.execute("SELECT * FROM file_target WHERE file_id = ?", (file["id"],)).fetchall(),
+                        key=lambda t: ranks.get(t["connection_id"], len(ranks)), default=None)
+            if shown:
+                db.execute("UPDATE file SET state = ?, note = ?, odoo_id = ? WHERE id = ?",
+                           (shown["state"], shown["note"], shown["odoo_id"], file["id"]))

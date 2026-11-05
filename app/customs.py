@@ -37,9 +37,10 @@ def entry_number(text):
 
 
 class CustomsUploader:
-    def __init__(self, db, odoo, max_pages):
+    def __init__(self, db, odoo, connection_id, max_pages):
         self.db = db
         self.odoo = odoo
+        self.connection_id = connection_id
         self.max_pages = max_pages
         self._batches = {}
 
@@ -57,8 +58,10 @@ class CustomsUploader:
                         (json.dumps(values), file["id"]))
         # The broker resends the same entry as a new PDF (a paperless copy): one entry per number.
         if number and self.db.execute(
-                "SELECT 1 FROM file WHERE doc_class = 'customs_entry' AND state = 'done' AND id != ? "
-                "AND json_extract(extracted, '$.entry_number') = ? LIMIT 1", (file["id"], number)).fetchone():
+                "SELECT 1 FROM file f JOIN file_target t ON t.file_id = f.id AND t.connection_id = ? "
+                "WHERE f.doc_class = 'customs_entry' AND t.state = 'done' AND f.id != ? "
+                "AND json_extract(f.extracted, '$.entry_number') = ? LIMIT 1",
+                (self.connection_id, file["id"], number)).fetchone():
             return "skipped", f"Entry {number} is already in the customs audit.", None
         entry_id = self.odoo.create(ENTRY, {"batch_id": self.batch((received or "")[:10]),
                                             "file_name": file["filename"],

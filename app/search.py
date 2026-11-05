@@ -11,6 +11,9 @@ from collections import namedtuple
 
 from .settings import SETTINGS
 
+# What the Odoo connections section of the Settings page is found by.
+CONNECTIONS_TEXT = "odoo connections address url database login user api key production staging development test"
+
 Query = namedtuple("Query", "terms filters")
 Item = namedtuple("Item", "title sub url badge")
 
@@ -133,10 +136,14 @@ def run(db, text, limit=6, state_labels=None):
 
     if _wanted(query, "settings"):
         words = [t.lower() for t in query.terms]
-        hits = [s for s in SETTINGS
+        hits = [Item(s.label, f"{s.group} settings", f"/settings#{s.key}", None) for s in SETTINGS
                 if all(w in f"{s.label} {s.help} {s.tip} {s.group} {s.key}".lower() for w in words)]
-        add("settings", [Item(s.label, f"{s.group} settings", f"/settings#{s.key}", None) for s in hits[:limit]],
-            len(hits))
+        if all(w in CONNECTIONS_TEXT for w in words):
+            hits.insert(0, Item("Odoo connections", "Settings", "/settings", None))
+        hits += [Item(r["name"], f"Odoo connection, {'on' if r['active'] else 'off'}", f"/connections/{r['id']}", None)
+                 for r in db.execute("SELECT id, name, url, database, login, active FROM odoo_connection ORDER BY name")
+                 if all(w in f"{r['name']} {r['url']} {r['database']} {r['login']} odoo connection".lower() for w in words)]
+        add("settings", hits[:limit], len(hits))
     if _wanted(query, "pages"):
         hits = [p for p in PAGES if all(t.lower() in p[0].lower() for t in query.terms)]
         add("pages", [Item(title, "Go to page", url, None) for title, url in hits[:limit]], len(hits))

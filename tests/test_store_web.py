@@ -193,14 +193,19 @@ def test_every_field_explains_itself_in_a_tooltip(client):
 
 def test_activity_records_settings_security_and_hides_secrets(client, db):
     token = signed_in(client)
-    client.post("/settings", data={"csrf": token, "odoo_user": "admin", "odoo_api_key": "super-secret-key"})
+    client.post("/settings", data={"csrf": token, "openai_model": "gpt-4o", "openai_api_key": "super-secret-key"})
+    client.post("/connections/new", data={"csrf": token, "name": "Staging", "login": "admin",
+                                          "api_key": "odoo-secret-key"})
     client.post("/subject-formats/new", data={"csrf": token, "name": "Maersk",
                                               "subject_pattern": r"BKG (?P<booking_number>\d+)"})
     rows = [dict(r) for r in db.execute("SELECT kind, summary, detail, actor FROM activity ORDER BY id")]
 
     assert rows[0]["kind"] == "security" and rows[0]["summary"] == "Admin password set on first start"
     settings = next(r for r in rows if r["summary"].startswith("Changed settings"))
-    assert "Login: (empty) → admin" in settings["detail"] and "API key: changed" in settings["detail"]
+    assert "Model: gpt-4o-mini → gpt-4o" in settings["detail"] and "OpenAI API key: changed" in settings["detail"]
+    created = next(r for r in rows if r["summary"] == "Created Odoo connection Staging")
+    assert "Login: (empty) → admin" in created["detail"] and "API key: changed" in created["detail"]
+    assert "super-secret-key" not in str(rows) and "odoo-secret-key" not in str(rows)
     assert "super-secret-key" not in str(rows)
     assert any(r["summary"] == "Created subject format Maersk" for r in rows)
     assert rows[-1]["actor"].startswith("admin from")

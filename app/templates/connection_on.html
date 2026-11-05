@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+{% set checked = mapped.values()|map("length")|sum %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="{{ url_for('web.settings') }}">Settings</a>{{ icon("chevron") }}
+      <a href="{{ url_for('web.connection', connection_id=connection.id) }}">{{ connection.name }}</a>{{ icon("chevron") }}<span>Turn on</span></div>
+    <div class="title-line"><h1>Turn on {{ connection.name }}</h1>
+      {% if connection.is_production %}<span class="badge failed">Production</span>{% endif %}</div>
+    <p>Once on, every email received from the start date is written to {{ connection.database }} at {{ connection.url }},
+      alongside the other connections that are on.</p>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card-head"><div><h2>Mapping check</h2>
+    <p>The companies, partners and products the mailboxes and vendor mappings point at, looked up in {{ connection.name }}
+      {% if reference and reference.id != connection.id %}and compared by name with {{ reference.name }}{% else %}and compared with the names saved on the vendor mappings{% endif %}.</p></div></div>
+  <div class="card-body">
+    {% if problems %}
+    <div class="callout bad">{{ icon("alert") }}<span><b>{{ problems|length }} problem{{ "s" if problems|length != 1 }}: the connection can't be turned on.</b>
+      Fix the mapping or the record in Odoo, then come back to this page.
+      <ul style="margin:8px 0 0;padding-left:18px">{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></span></div>
+    {% else %}
+    <div class="callout ok-callout">{{ icon("check") }}<span>All {{ checked }} mapped record{{ "s" if checked != 1 }} match.</span></div>
+    {% endif %}
+  </div>
+</section>
+
+{% if not problems %}
+<form method="post" action="{{ request.path }}" class="card">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="card-head"><div><h2>Turn on</h2></div></div>
+  <div class="card-body">
+    <div class="form-grid">
+      <div class="field">
+        <div class="label-line"><label for="start_from">Write mail received from</label></div>
+        <input type="date" id="start_from" name="start_from" value="{{ start }}" required>
+        <div class="help">UTC. Emails already kept from this date on are written to {{ connection.name }} too; earlier mail never is.</div>
+      </div>
+      {% if connection.is_production %}
+      <div class="field">
+        <div class="label-line"><label for="confirm_name">Type <b>{{ connection.name }}</b> to confirm</label></div>
+        <input type="text" id="confirm_name" name="confirm_name" autocomplete="off" required>
+        <div class="help">This is production: the service will write to the Odoo your company works in.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card-body" style="border-top:1px solid var(--border)">
+    <div class="actions">
+      <button class="btn {{ 'danger' if connection.is_production else '' }}">Turn on {{ connection.name }}</button>
+      <a class="btn ghost" href="{{ url_for('web.connection', connection_id=connection.id) }}">Cancel</a>
+    </div>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
