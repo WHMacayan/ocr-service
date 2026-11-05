@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+{% set group_icons = {"emails": "inbox", "mailboxes": "mail", "vendors": "users", "formats": "type",
+                      "settings": "sliders", "activity": "activity", "pages": "chevron"} %}
+<div class="page-head">
+  <div><h1>Search</h1>
+    <p>Emails (with the text read from their files), mailboxes, vendor mappings, subject formats, settings and the activity log.</p></div>
+</div>
+
+<form class="search big" method="get" role="search">
+  {{ icon("search") }}
+  <input type="search" name="q" value="{{ q }}" placeholder="Booking number, container, sender, vendor…" aria-label="Search" autofocus>
+</form>
+<p class="search-help">Every word must match. Use <code>"quotes"</code> for a phrase, and narrow emails with
+  <code>state:failed</code>, <code>from:maersk.com</code> or <code>mailbox:bookings</code>. <code>in:vendors</code> keeps one kind of result.</p>
+
+{% if q and not groups %}
+<div class="card"><div class="empty">
+  <div class="empty-icon">{{ icon("search") }}</div>
+  <h2>Nothing matches “{{ q }}”</h2>
+  <p>Check the spelling, use fewer words, or drop a filter.</p>
+</div></div>
+{% endif %}
+
+{% for key, label, items, more in groups %}
+<section class="card table-card result-group">
+  <div class="card-head"><div><h2>{{ icon(group_icons[key]) }} {{ label }}</h2>
+    <p>{{ items|length + more }} match{{ "es" if items|length + more != 1 }}{% if more %}, first {{ items|length }} shown{% endif %}</p></div>
+    {% if key == "emails" %}<a class="btn secondary sm" href="{{ url_for('web.messages', q=q) }}">Open in Emails</a>{% endif %}
+    {% if key == "activity" %}<a class="btn secondary sm" href="{{ url_for('web.activity', q=' '.join(terms)) }}">Open in Activity</a>{% endif %}
+  </div>
+  <ul class="results">
+    {% for item in items %}
+    <li><a href="{{ item.url }}" {% if item.url.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>
+      <span class="r-title">{{ item.title|highlight(terms) }}</span>
+      {% if item.badge %}<span class="badge {{ item.badge[0] }}">{{ item.badge[1] }}</span>{% endif %}
+      <span class="r-sub">{{ item.sub|highlight(terms) }}</span></a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+{% endblock %}

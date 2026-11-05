@@ -1,0 +1,28 @@
+services:
+  web:
+    build: .
+    command: gunicorn --bind 0.0.0.0:8000 --workers 1 --threads 4 "app:create_app()"
+    ports:
+      # This PC only: other computers on the network cannot open the page.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ocr-data:/data
+    # The local Odoo answers at katana.local on this PC (hosts file -> nginx on port 80).
+    extra_hosts: &hosts
+      - "katana.local:host-gateway"
+    restart: unless-stopped
+    logging: &logging
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  worker:
+    build: .
+    volumes:
+      - ocr-data:/data
+    extra_hosts: *hosts
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  ocr-data:

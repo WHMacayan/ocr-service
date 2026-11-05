@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs">{% for label, href in crumbs %}<a href="{{ href }}">{{ label }}</a>{{ icon("chevron") }}{% endfor %}<span>{{ title }}</span></div>
+    <div class="title-line"><h1>{{ title }}</h1></div>
+    {% if record and record.subtitle %}<p>{{ record.subtitle }}</p>{% endif %}
+  </div>
+  <div class="actions">
+    <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
+    <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
+  </div>
+</div>
+
+{% if error %}
+<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>
+{% elif not record %}
+<div class="callout bad" style="margin-bottom:20px">{{ icon("alert") }}<span>This record is no longer in Odoo: it was deleted there.</span></div>
+{% endif %}
+
+{% if record %}
+<ol class="statusbar" aria-label="Status">
+  {% for label, current in record.steps %}<li {% if current %}aria-current="step"{% endif %}>{{ label }}</li>{% endfor %}
+</ol>
+
+{% for kind, text in record.alerts %}
+<div class="callout {{ kind }}" style="margin-bottom:20px">{{ icon("alert") }}<span style="white-space:pre-line">{{ text }}</span></div>
+{% endfor %}
+
+<div class="record-grid">
+{% for section, fields in record.sections %}
+<section class="card table-card">
+  <div class="card-head"><div><h2>{{ section }}</h2></div></div>
+  <table class="data">
+    <tbody>
+    {% for label, value in fields %}
+    <tr><td class="cell-main"><span class="primary">{{ label }}</span></td>
+      <td data-label="{{ label }}" style="white-space:pre-line">{{ value or "–" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+</div>
+
+{% for tab in record.tabs %}
+<section class="card table-card" style="margin-top:20px">
+  {% if tab.fields is defined %}
+  <div class="card-head"><div><h2>{{ tab.title }}</h2></div></div>
+  <table class="data">
+    <tbody>
+    {% for label, value in tab.fields %}
+    <tr><td class="cell-main"><span class="primary">{{ label }}</span></td>
+      <td data-label="{{ label }}" style="white-space:pre-line">{{ value or "–" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="card-head"><div><h2>{{ tab.title }}</h2><p>{{ tab.rows|length }} in Odoo</p></div></div>
+  {% if tab.rows %}
+  <table class="data">
+    <thead><tr>{% for c in tab.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in tab.rows %}
+    {% set href = url_for(tab.link, entry_id=row.id) if tab.link else None %}
+    <tr {% if href %}data-href="{{ href }}"{% endif %}>
+      {% for cell in row.cells %}
+      {% if loop.first %}<td class="cell-main">{% if href %}<a class="primary" href="{{ href }}">{{ cell or "–" }}</a>{% else %}<span class="primary">{{ cell or "–" }}</span>{% endif %}</td>
+      {% else %}<td data-label="{{ tab.columns[loop.index0] }}">{{ cell }}</td>{% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty"><p>None in Odoo.</p></div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+{% endif %}
+
+{% if emails %}
+<section class="card table-card" style="margin-top:20px">
+  <div class="card-head"><div><h2>Emails that fed this record</h2><p>Open an email to see its files and what was done with them.</p></div></div>
+  <table class="data">
+    <thead><tr><th>Email</th><th>Received (UTC)</th><th>State</th></tr></thead>
+    <tbody>
+    {% for m in emails %}
+    {% set href = url_for('web.message', message_id=m.id) %}
+    <tr data-href="{{ href }}">
+      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ m.subject or "No subject" }}</a><span class="sub">{{ m.sender }}</span></td>
+      <td data-label="Received (UTC)"><span class="num">{{ m.received or "" }}</span></td>
+      <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% set title = "Run history" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="{{ url_for('web.records', key='mailboxes') }}">Mailboxes</a>{{ icon("chevron") }}
+      <a href="{{ url_for('web.record', key='mailboxes', record_id=mailbox.id) }}">{{ mailbox.name }}</a>{{ icon("chevron") }}<span>Run history</span></div>
+    <h1>Run history</h1>
+    <p>The last 20 times this mailbox was read. Open a run to see its log.</p>
+  </div>
+</div>
+{% for run in runs %}
+<details class="card run" {% if loop.first %}open{% endif %}>
+  <summary>
+    <span class="chev">{{ icon("chevron") }}</span>
+    <span class="when">{{ run.started_at }} UTC</span>
+    <span class="badge {{ run.status }}">{{ {"running": "Running", "success": "Read", "partial": "Partly read", "error": "Failed"}.get(run.status, run.status) }}</span>
+    <span class="sum">{{ run.emails_matched }} new of {{ run.emails_found }} read, {{ run.documents_created }} file{{ "s" if run.documents_created != 1 }} saved{% if run.failed %}, {{ run.failed }} error{{ "s" if run.failed != 1 }}{% endif %}</span>
+  </summary>
+  <pre class="log">{{ run.log or "No log." }}</pre>
+</details>
+{% else %}
+<div class="card"><div class="empty">
+  <div class="empty-icon">{{ icon("history") }}</div>
+  <h2>Not read yet</h2><p>Runs appear here after the worker reads this mailbox.</p>
+</div></div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+{% set kind_icons = {"settings": "sliders", "security": "key", "processing": "inbox", "odoo": "external"} %}
+{% set level_badges = {"error": ("failed", "Error"), "warning": ("review", "Warning")} %}
+
+<div class="page-head">
+  <div><h1>Activity</h1>
+    <p>Who changed what, every sign-in, what the service processed and every record it wrote to Odoo.
+      Kept for {{ keep_days or "?" }} days.</p></div>
+  <form class="search" method="get" role="search">
+    {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+    {{ icon("search") }}
+    <input type="search" name="q" value="{{ query }}" placeholder="Search the activity" aria-label="Search the activity">
+  </form>
+</div>
+
+<nav class="tabs" aria-label="Filter by type">
+  <a href="{{ url_for('web.activity', q=query or None) }}" {% if not kind %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
+  {% for k, label in labels.items() %}
+  <a href="{{ url_for('web.activity', kind=k, q=query or None) }}" {% if kind == k %}aria-current="true"{% endif %}>
+    {{ icon(kind_icons[k]) }} {{ label }} <span class="n">{{ counts.get(k, 0) }}</span></a>
+  {% endfor %}
+</nav>
+<div style="height:20px"></div>
+
+<div class="card table-card">
+{% if rows %}
+  <table class="data activity">
+    <thead><tr><th>When (UTC)</th><th>What happened</th><th>Type</th><th>By</th></tr></thead>
+    <tbody>
+    {% for a in rows %}
+    <tr>
+      <td data-label="When (UTC)"><span class="num">{{ a.at }}</span></td>
+      <td class="cell-main">
+        <span class="what">
+          {% if a.level in level_badges %}<span class="badge {{ level_badges[a.level][0] }}">{{ level_badges[a.level][1] }}</span>{% endif %}
+          {% if a.link %}<a class="primary" href="{{ a.link }}" {% if a.link.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ a.summary }}{% if a.link.startswith('http') %} {{ icon("external") }}{% endif %}</a>
+          {% else %}<span class="primary">{{ a.summary }}</span>{% endif %}
+        </span>
+        {% if a.detail %}<details class="detail"><summary>Details</summary><pre class="block">{{ a.detail }}</pre></details>{% endif %}
+      </td>
+      <td data-label="Type"><span class="kind">{{ icon(kind_icons.get(a.kind, "info")) }} {{ labels.get(a.kind, a.kind) }}</span></td>
+      <td data-label="By">{{ "The service" if a.actor == "worker" else a.actor|replace("admin from ", "Admin, ") }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if older %}
+  <div class="table-foot"><a class="btn secondary sm" href="{{ url_for('web.activity', kind=kind, q=query or None, before=older) }}">Show older</a></div>
+  {% endif %}
+{% else %}
+  <div class="empty">
+    <div class="empty-icon">{{ icon("activity") }}</div>
+    <h2>{{ "Nothing matches" if query or kind else "No activity yet" }}</h2>
+    <p>{% if query or kind %}Try another search or type.{% else %}Setting changes, sign-ins, processing and Odoo writes appear here as they happen.{% endif %}</p>
+    {% if query or kind %}<div class="actions"><a class="btn secondary" href="{{ url_for('web.activity') }}">Show everything</a></div>{% endif %}
+  </div>
+{% endif %}
+</div>
+{% endblock %}

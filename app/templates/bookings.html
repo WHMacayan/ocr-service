@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Bookings</h1>
+    <p>Every freight booking the service created or updated in Odoo. Open one to check what the service wrote, and from which email, against what Odoo holds now.</p></div>
+  {% if rows %}<div class="actions">
+    <div class="search">{{ icon("search") }}<input type="search" placeholder="Filter bookings" aria-label="Filter bookings" data-filter="#records"></div>
+  </div>{% endif %}
+</div>
+
+{% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read, so only the service's side is shown: {{ error }}</span></div>{% endif %}
+
+<div class="card table-card">
+{% if rows %}
+  <table class="data" id="records">
+    <thead><tr><th>Booking</th><th>Factory</th><th>Route</th><th>ETD / ETA</th><th>Odoo state</th><th>Check</th></tr></thead>
+    <tbody>
+    {% for b in rows %}
+    {% set href = url_for('web.booking', booking_id=b.id) %}
+    <tr data-href="{{ href }}">
+      <td class="cell-main"><a class="primary" href="{{ href }}">{{ b.label }}</a>
+        <span class="sub">Odoo ID {{ b.id }}{% if b.emails %}, from {{ b.emails }} email{{ "s" if b.emails != 1 }}{% endif %}</span></td>
+      <td data-label="Factory">{{ b.factory_id_shown }}</td>
+      <td data-label="Route">{% if b.port_of_loading_shown or b.port_of_discharge_shown %}{{ b.port_of_loading_shown or "?" }} → {{ b.port_of_discharge_shown or "?" }}{% endif %}</td>
+      <td data-label="ETD / ETA"><span class="num">{{ b.etd_shown or "–" }} / {{ b.eta_shown or "–" }}</span></td>
+      <td data-label="Odoo state">{% if b.state_shown %}<span class="badge">{{ b.state_shown }}</span>{% endif %}</td>
+      <td data-label="Check">
+        {% if b.missing_in_odoo %}<span class="badge failed">Not in Odoo</span>
+        {% elif not b.recorded %}<span class="nothing" title="Processed before the service kept its own record.">Not recorded</span>
+        {% elif b.differs %}<span class="badge review" title="{{ b.differs|join(', ') }}">{{ b.differs|length }} differ{{ "s" if b.differs|length == 1 }}</span>
+        {% elif b.odoo %}<span class="badge ok">Matches</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="table-foot" data-filter-empty hidden>Nothing matches the filter.</div>
+{% else %}
+  <div class="empty">
+    <div class="empty-icon">{{ icon("file") }}</div>
+    <h2>No bookings yet</h2>
+    <p>Bookings appear here once the service has created or updated one in Odoo from a freight email.</p>
+  </div>
+{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% set title = form.title %}
+{% block content %}
+{% set intro = {
+  "mailboxes": "The Outlook mailboxes the service reads, and the Odoo company each one feeds.",
+  "vendor-mappings": "The forwarders and factories the service recognises, and their Odoo partners.",
+  "subject-formats": "How booking and invoice numbers are read from email subject lines.",
+}[key] %}
+{% set status_labels = {"new": "Never read", "running": "Reading now", "success": "Read", "partial": "Partly read", "error": "Failed"} %}
+{% set headings = {"partner_name": "Odoo partner", "status": "Last read", "last_sync": "Read at (UTC)"} %}
+
+<div class="page-head">
+  <div><h1>{{ form.title }}</h1><p>{{ intro }}</p></div>
+  {% if rows %}<div class="actions">
+    <div class="search">{{ icon("search") }}<input type="search" placeholder="Filter {{ form.title|lower }}" aria-label="Filter {{ form.title|lower }}" data-filter="#records"></div>
+    <a class="btn" href="{{ url_for('web.record', key=key) }}">{{ icon("plus") }} Add {{ form.singular }}</a></div>{% endif %}
+</div>
+
+<div class="card table-card">
+{% if rows %}
+  <table class="data" id="records">
+    <thead><tr>{% for column in form.columns %}<th>{{ headings.get(column) or labels.get(column) or column }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+    {% set href = url_for('web.record', key=key, record_id=row.id) %}
+    <tr data-href="{{ href }}">
+      {% for column in form.columns %}
+      {% set value = row[column] %}
+      {% set heading = headings.get(column) or labels.get(column) or column %}
+      {% if loop.first %}
+      <td class="cell-main"><a class="primary" href="{{ href }}">{{ value or "Unnamed" }}</a></td>
+      {% else %}
+      <td data-label="{{ heading }}">
+        {%- if column in ("active", "confirms_booking") -%}<span class="badge {{ 'ok' if value else '' }}">{{ "Yes" if value else "No" }}</span>
+        {%- elif column == "status" -%}<span class="badge {{ value }}">{{ status_labels.get(value, value) }}</span>
+        {%- elif column == "purpose" -%}{{ {"freight_booking": "Freight Booking", "bill_matching": "Bill Matching", "customs_entry": "Customs Entry Summaries"}.get(value, value) }}
+        {%- elif column in ("role", "freight_mode") -%}{{ (value or "")|capitalize }}
+        {%- elif column == "subject_pattern" -%}<code class="clip">{{ value }}</code>
+        {%- elif column == "last_sync" -%}<span class="num">{{ value or "" }}</span>
+        {%- else -%}{{ value if value is not none else "" }}{%- endif -%}
+      </td>
+      {% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="table-foot" data-filter-empty hidden>Nothing matches the filter.</div>
+{% else %}
+  <div class="empty">
+    <div class="empty-icon">{{ icon({"mailboxes": "mail", "vendor-mappings": "users", "subject-formats": "type"}[key]) }}</div>
+    <h2>No {{ form.title|lower }} yet</h2>
+    <p>{{ intro }}</p>
+    <div class="actions"><a class="btn" href="{{ url_for('web.record', key=key) }}">{{ icon("plus") }} Add {{ form.singular }}</a></div>
+  </div>
+{% endif %}
+</div>
+{% endblock %}

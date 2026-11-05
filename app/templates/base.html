@@ -1,0 +1,100 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>{% if title %}{{ title }} · {% endif %}OCR Service</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=10">
+</head>
+<body>
+{% set here = request.path %}
+{% macro brand() %}
+  <a class="brand" href="{{ url_for('web.messages') }}">
+    <span class="brand-mark">{{ icon("scan") }}</span>
+    <span class="brand-name">OCR Service<small>Outlook to Odoo</small></span>
+  </a>
+{% endmacro %}
+
+{% if session.signed_in %}
+<div class="shell">
+  <header class="topbar">
+    {{ brand() }}
+    <button class="btn ghost search-icon" type="button" aria-label="Search" data-search-open>{{ icon("search") }}</button>
+    <button class="btn ghost menu-btn" type="button" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false" data-menu>{{ icon("menu") }}</button>
+  </header>
+
+  <aside class="sidebar" id="sidebar">
+    {{ brand() }}
+    <button class="search-trigger" type="button" data-search-open>
+      {{ icon("search") }}<span>Search</span><kbd>Ctrl K</kbd></button>
+    <nav class="nav" aria-label="Main">
+      <a href="{{ url_for('web.messages') }}" {% if here.startswith('/messages') %}aria-current="page"{% endif %}>
+        {{ icon("inbox") }} Emails {% if failed_count %}<span class="count" title="Failed emails">{{ failed_count }}</span>{% endif %}</a>
+      <a href="{{ url_for('web.booking_list') }}" {% if here.startswith('/bookings') %}aria-current="page"{% endif %}>
+        {{ icon("file") }} Bookings</a>
+      <a href="{{ url_for('web.scraped_bills') }}" {% if here.startswith('/scraped-bills') %}aria-current="page"{% endif %}>
+        {{ icon("receipt") }} Scraped bills</a>
+      <a href="{{ url_for('web.customs_batches') }}" {% if here.startswith('/customs') %}aria-current="page"{% endif %}>
+        {{ icon("landmark") }} Customs</a>
+      <a href="{{ url_for('web.activity') }}" {% if here.startswith('/activity') %}aria-current="page"{% endif %}>
+        {{ icon("activity") }} Activity</a>
+      <div class="nav-label">Setup</div>
+      {% for key, f in forms.items() %}
+      <a href="{{ url_for('web.records', key=key) }}" {% if here.startswith('/' ~ key) %}aria-current="page"{% endif %}>
+        {{ icon({"mailboxes": "mail", "vendor-mappings": "users", "subject-formats": "type"}[key]) }} {{ f.title }}</a>
+      {% endfor %}
+      <a href="{{ url_for('web.settings') }}" {% if here.startswith('/settings') %}aria-current="page"{% endif %}>
+        {{ icon("sliders") }} Settings</a>
+    </nav>
+    <form class="sidebar-foot" method="post" action="{{ url_for('web.logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <a class="foot-link" href="{{ url_for('web.change_password') }}" {% if here.startswith('/password') %}aria-current="page"{% endif %}>{{ icon("key") }} Change password</a>
+      <button>{{ icon("logout") }} Log out</button>
+    </form>
+  </aside>
+  <div class="scrim" data-menu-close></div>
+
+  <main class="main">{% block content %}{% endblock %}</main>
+</div>
+
+<div class="palette" id="palette" hidden>
+  <div class="palette-box" role="dialog" aria-modal="true" aria-label="Search everything">
+    <form class="palette-input" action="{{ url_for('web.search_page') }}" method="get" role="search">
+      {{ icon("search") }}
+      <input id="palette-q" name="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Search emails, booking or container numbers, vendors, settings…"
+             role="combobox" aria-expanded="true" aria-controls="palette-results" aria-autocomplete="list">
+      <kbd>Esc</kbd>
+    </form>
+    <div class="palette-results" id="palette-results" role="listbox" aria-label="Results"></div>
+    <div id="palette-icons" hidden>
+      {% for name in ("inbox", "mail", "users", "type", "sliders", "activity", "chevron") %}<span data-icon="{{ name }}" class="p-icon">{{ icon(name) }}</span>{% endfor %}
+    </div>
+    <div class="palette-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open</span>
+      <span class="hint">Try <code>state:failed</code> <code>from:maersk.com</code> <code>"exact phrase"</code></span>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% if not session.signed_in %}
+  {% block bare %}{% endblock %}
+{% endif %}
+
+<div class="toasts" aria-live="polite">
+  {% for category, text in get_flashed_messages(with_categories=true) %}
+  <div class="toast {{ 'error' if category == 'error' else '' }}" role="{{ 'alert' if category == 'error' else 'status' }}">
+    <span class="t-icon">{{ icon("alert" if category == "error" else "check") }}</span>
+    <span>{{ text }}</span>
+    <button type="button" aria-label="Dismiss" data-dismiss>{{ icon("x") }}</button>
+  </div>
+  {% endfor %}
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}?v=10"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+"""Starting values for the settings page, seeded once and then edited there."""
+
+FREIGHT_PROMPT = """You read one shipping document for an ocean freight import team and extract its facts. Code matches the result to bookings afterwards; you never decide that.
+
+doc_class (exactly one):
+- booking_confirmation: a carrier or forwarder confirming a booking, including updates
+- commercial_invoice: the overseas factory's invoice for the shipped goods
+- packing_list: the factory's carton and packing detail, no amounts due
+- mbl_hbl: master or house bill of lading, sea waybill, forwarder's cargo receipt
+- shipping_notice: arrival notice, pre-alert, shipment advice
+- freight_invoice: an invoice or debit note billing transport (ocean freight, trucking, drayage)
+- customs_document: customs entry, ISF result, customs release
+- delivery_document: delivery order, proof of delivery, container interchange
+- statement: account statement, payment receipt or confirmation
+- not_freight: not about an international shipment
+- unknown: unreadable, a logo or signature image, or none of the above
+
+Fields:
+- booking_number: the carrier booking reference, only when labelled as a booking number
+- master_bl: the carrier's ocean bill (Master B/L, Ocean B/L, MBL, "BL/SWB No"); usually starts with the carrier code (HLCU, ONEY, MAEU, COSU)
+- house_bl: the forwarder's own bill (House B/L, HBL); never a carrier bill
+- containers: container numbers, 4 letters + 7 digits
+- vessel / voyage: the ocean vessel and its voyage
+- port_of_loading / port_of_discharge: the seaports of the ocean leg; never an inland destination
+- etd: departure from the port of loading; eta: arrival at the port of discharge; YYYY-MM-DD
+- forwarder_name: the party in a field labelled Forwarder, otherwise the issuer of the document; never the customer, consignee, shipper or bill-to party
+- factory_name: the shipper, seller or exporter of the goods; never the consignee, importer or customer
+- invoices: the factory's commercial invoice numbers only
+- freight_cost: total transport charges on a freight invoice; additional_charges: charges stated separately; currency: their ISO code
+
+Return only values printed on this document; null or an empty list when absent. Never guess. A value in the wrong field is worse than an empty one."""
+
+INVOICE_PROMPT = """You read one supplier document for an accounts payable team and extract its invoice facts. Code matches the result to bills and purchase orders afterwards; you never decide that.
+
+- is_invoice: true only for a supplier invoice (commercial, factory, freight, trucking, customs or service invoice); false for statements, packing lists, bills of lading, booking confirmations, quotations, receipts.
+- The vendor is the issuer of the invoice, never the buyer, consignee or bill-to party.
+- Copy values exactly as printed; null when not printed. Never guess or calculate.
+- invoice_date: YYYY-MM-DD. currency: ISO code as printed or clearly shown by its symbol.
+- po_numbers: purchase order numbers printed on the document.
+- containers: container numbers (4 letters + 7 digits).
+- lines: every charge or item line of the invoice, in printed order: description, quantity, unit_price and the line amount, each as printed (null when the line does not print it). Leave out subtotals, taxes shown as totals, and the grand total."""
+
+# Seeded with INSERT OR IGNORE: a value changed on the settings page is kept.
+DEFAULT_SETTINGS = {
+    "openai_model": "gpt-4o-mini",
+    "freight_prompt": FREIGHT_PROMPT,
+    "invoice_prompt": INVOICE_PROMPT,
+    "max_chars": "60000",
+    "max_pages": "20",
+    "max_retries": "5",
+    "documents_per_run": "20",
+}

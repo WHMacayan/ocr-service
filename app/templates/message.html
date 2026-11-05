@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% set title = message.subject or "Email" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="{{ url_for('web.messages') }}">Emails</a>{{ icon("chevron") }}<span>Email</span></div>
+    <div class="title-line"><h1>{{ message.subject or "No subject" }}</h1>
+      <span class="badge {{ message.state }}">{{ state_labels.get(message.state, message.state) }}</span></div>
+  </div>
+  <form class="actions" method="post" action="{{ url_for('web.retry', message_id=message.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn {{ '' if message.state in ('failed', 'review') else 'secondary' }}">{{ icon("rotate") }} Process again</button>
+  </form>
+</div>
+
+{% if message.note %}
+<div class="callout {{ 'bad' if message.state == 'failed' else 'warn' }}" style="margin-bottom:20px">{{ icon("alert") }}<span>{{ message.note }}</span></div>
+{% endif %}
+
+<div class="card">
+  <dl class="facts" style="margin:0">
+    <div><dt>From</dt><dd>{{ message.sender }}</dd></div>
+    <div><dt>Received (UTC)</dt><dd>{{ message.received or "Unknown" }}</dd></div>
+    <div><dt>Mailbox</dt><dd>{{ message.mailbox_name }}</dd></div>
+    <div><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
+  </dl>
+</div>
+
+<section class="card table-card">
+  <div class="card-head"><div><h2>In Odoo</h2>
+    <p>What this email created or changed in Odoo. Open a record to check it against the email.</p></div>
+    {% if in_odoo and in_odoo.records %}<div class="actions">{% for r in in_odoo.records %}
+      <a class="odoo-chip {{ r.action }}" {% if r.model == 'b2b.ocr.booking' %}href="{{ url_for('web.booking', booking_id=r.id) }}"{% else %}href="{{ r.link or '#' }}" target="_blank" rel="noopener noreferrer"{% endif %}>
+        <b>{{ r.kind }}</b> {{ r.label }} <span>{{ r.action }}</span></a>{% endfor %}</div>{% endif %}
+  </div>
+  {% if changes %}
+  <table class="data">
+    <thead><tr><th>Odoo record</th><th>Change</th><th>From</th><th>When (UTC)</th></tr></thead>
+    <tbody>
+    {% for c in changes %}
+    <tr>
+      <td class="cell-main">
+        {% if c.link %}<a class="primary" href="{{ c.link }}" target="_blank" rel="noopener noreferrer">{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }} {{ icon("external") }}</a>
+        {% else %}<span class="primary">{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }}</span>{% endif %}
+        <span class="sub">Odoo ID {{ c.record_id }}</span>
+        {% if c.detail %}<details class="detail"><summary>Fields written</summary><pre class="block">{{ c.detail }}</pre></details>{% endif %}
+      </td>
+      <td data-label="Change"><span class="badge {{ 'ok' if c.action == 'created' else ('failed' if c.action == 'deleted' else '') }} change-action">{{ c.action }}</span></td>
+      <td data-label="From">{{ c.filename or "Email text" }}</td>
+      <td data-label="When (UTC)"><span class="num">{{ c.at }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% elif in_odoo and in_odoo.records %}
+  <div class="card-body" style="color:var(--text-3)">Processed before changes were recorded per email: its files point to the record above, but not which fields were written.</div>
+  {% elif message.state in ("done", "skipped") and message.processed_at %}
+  <div class="card-body" style="color:var(--text-3)">Nothing was written to Odoo: this email had no booking or invoice facts that needed a change.</div>
+  {% elif message.state in ("done", "skipped") %}
+  <div class="card-body" style="color:var(--text-3)">Not recorded: this email was processed before the service kept a record of its Odoo changes.
+    Press <b>Process again</b> to see what it changes in Odoo; the files' earlier readings are reused, so the AI is not asked again.</div>
+  {% else %}
+  <div class="card-body" style="color:var(--text-3)">Nothing written to Odoo yet. The email is {{ state_labels.get(message.state, message.state)|lower }}.</div>
+  {% endif %}
+</section>
+
+<section class="card table-card">
+  <div class="card-head"><div><h2>Files</h2><p>The attachments saved from this email and what became of them.</p></div></div>
+  {% if files %}
+  <table class="data">
+    <thead><tr><th>File</th><th>Document type</th><th>State</th><th>Odoo record</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for f in files %}
+    <tr>
+      <td class="cell-main"><span class="primary">{{ f.filename }}</span></td>
+      <td data-label="Document type">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }}</td>
+      <td data-label="State"><span class="badge {{ f.state }}">{{ {"new": "Queued", "waiting": "Waiting for booking"}.get(f.state, f.state|capitalize) }}</span></td>
+      <td data-label="Odoo record"><span class="num">{{ f.odoo_id or "" }}</span></td>
+      <td data-label="Note">{{ f.note or "" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="card-body" style="color:var(--text-3)">This email has no saved files.</div>
+  {% endif %}
+</section>
+
+{% if message.skipped_attachments %}
+<section class="card">
+  <div class="card-head"><div><h2>Attachments not saved</h2></div></div>
+  <div class="card-body"><pre class="block">{{ message.skipped_attachments }}</pre></div>
+</section>
+{% endif %}
+{% if message.body_text %}
+<section class="card">
+  <div class="card-head"><div><h2>Email text</h2></div></div>
+  <div class="card-body"><pre class="block">{{ message.body_text }}</pre></div>
+</section>
+{% endif %}
+{% endblock %}

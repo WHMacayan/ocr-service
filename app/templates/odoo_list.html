@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ title }}</h1><p>{{ intro }}</p></div>
+  {% if rows %}<div class="actions">
+    <div class="search">{{ icon("search") }}<input type="search" placeholder="Filter {{ title|lower }}" aria-label="Filter {{ title|lower }}" data-filter="#records"></div>
+  </div>{% endif %}
+</div>
+
+{% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>{% endif %}
+
+<div class="card table-card">
+{% if rows %}
+  <table class="data" id="records">
+    <thead><tr>{% for _c, label in heads %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+    {% set href = url_for(endpoint, **{id_arg: r.id}) %}
+    <tr data-href="{{ href }}">
+      {% for c, label in heads %}
+      {% if loop.first %}
+      <td class="cell-main"><a class="primary" href="{{ href }}">{{ r[c] or "#" ~ r.id }}</a>
+        <span class="sub">Odoo ID {{ r.id }}{% if r.emails %}, from {{ r.emails }} email{{ "s" if r.emails != 1 }}{% endif %}</span></td>
+      {% elif c in ("state", "status") %}
+      <td data-label="{{ label }}">{% if r[c] %}<span class="badge">{{ r[c] }}</span>{% endif %}</td>
+      {% else %}
+      <td data-label="{{ label }}"><span class="{{ 'num' if r.raw[c] is number else '' }}">{{ r[c] }}</span></td>
+      {% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="table-foot" data-filter-empty hidden>Nothing matches the filter.</div>
+{% else %}
+  <div class="empty">
+    <div class="empty-icon">{{ icon("file") }}</div>
+    <h2>Nothing yet</h2>
+    <p>{{ empty }}</p>
+  </div>
+{% endif %}
+</div>
+{% endblock %}

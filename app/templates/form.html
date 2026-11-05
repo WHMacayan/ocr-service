@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% macro tip(f) %}{% if f.tip %}<span class="tip">
+  <button type="button" class="tip-btn" aria-label="What is {{ f.label }} for?" aria-describedby="tip-{{ f.name }}">{{ icon("info") }}</button>
+  <span class="tip-text" role="tooltip" id="tip-{{ f.name }}">{{ f.tip }}</span></span>{% endif %}{% endmacro %}
+{% block content %}
+{% set is_new = form is defined and not record_id %}
+{% set status_labels = {"new": "Never read", "running": "Reading now", "success": "Read", "partial": "Partly read", "error": "Failed"} %}
+
+<div class="page-head">
+  <div>
+    {% if key %}
+    <div class="crumbs"><a href="{{ url_for('web.records', key=key) }}">{{ form.title }}</a>{{ icon("chevron") }}
+      <span>{{ "New" if is_new else "Edit" }}</span></div>
+    <h1>{{ record.name or record.partner_name or ("New " ~ form.singular if is_new else form.singular|capitalize) }}</h1>
+    {% else %}
+    <h1>{{ title }}</h1>
+    <p>The connections and limits the service works with. Changes apply on the worker's next check.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if extra == "mailbox" and record_id %}
+{% set connected = record.refresh_token %}
+<div class="card">
+  <dl class="facts" style="margin:0">
+    <div><dt>Outlook</dt><dd><span class="badge {{ 'ok' if connected else 'error' }}">{{ "Connected" if connected else "Not connected" }}</span></dd></div>
+    <div><dt>Last read</dt><dd><span class="badge {{ record.status }}">{{ status_labels.get(record.status, record.status) }}</span>
+      {% if record.last_sync %}<span class="muted">{{ record.last_sync }} UTC</span>{% endif %}</dd></div>
+    <div><dt>Reads</dt><dd>{% if record.auto_sync %}Every {{ record.sync_interval }} minutes{% else %}Only when you press Read now{% endif %}</dd></div>
+  </dl>
+  <div class="card-body" style="border-top:1px solid var(--border)">
+    {% if record.last_error %}<div class="callout bad" style="margin-bottom:16px">{{ icon("alert") }}<span>{{ record.last_error }}</span></div>{% endif %}
+    {% if record.group_miss_note %}<div class="callout warn" style="margin-bottom:16px">{{ icon("alert") }}<span>{{ record.group_miss_note }}</span></div>{% endif %}
+    <div class="actions">
+      <form method="post" action="{{ url_for('web.connect_outlook', mailbox_id=record_id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn {{ 'secondary' if connected else '' }}">{{ icon("plug") }} {{ "Reconnect Outlook" if connected else "Connect Outlook" }}</button>
+      </form>
+      <form method="post" action="{{ url_for('web.sync_now', mailbox_id=record_id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn secondary" {% if not connected %}disabled title="Connect Outlook first"{% endif %}>{{ icon("refresh") }} Read now</button>
+      </form>
+      <a class="btn ghost" href="{{ url_for('web.runs', mailbox_id=record_id) }}">{{ icon("history") }} Run history</a>
+      <form method="post" action="{{ url_for('web.duplicate_mailbox', mailbox_id=record_id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn ghost">{{ icon("copy") }} Duplicate</button>
+      </form>
+    </div>
+  </div>
+</div>
+<div style="height:20px"></div>
+{% endif %}
+
+<form method="post" action="{{ action }}" id="record-form" novalidate>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% for title_, description, fields in sections %}
+  <section class="card">
+    <div class="card-head"><div><h2>{{ title_ }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}</div></div>
+    <div class="card-body">
+      <div class="form-grid">
+        {% for f in fields %}
+        {% set value = record.get(f.name) %}
+        <div class="field {{ 'wide' if f.kind == 'textarea' else '' }}">
+          {% if f.kind == "bool" %}
+            <label class="switch"><input type="checkbox" name="{{ f.name }}" {% if value %}checked{% endif %}>
+              <span><b>{{ f.label }}{{ tip(f) }}</b>{% if f.help %}<span class="help">{{ f.help }}</span>{% endif %}</span></label>
+          {% elif f.kind == "secret" %}
+            <span class="label"><span id="{{ f.name }}-label">{{ f.label }}</span>{{ tip(f) }}</span>
+            {% if hints.get(f.name) %}
+            <div class="secret-saved" data-saved="{{ f.name }}">
+              <span class="tick">{{ icon("check") }}</span><span>Saved, ends in <code>{{ hints[f.name] }}</code></span>
+              <button type="button" class="btn secondary sm" data-replace="{{ f.name }}">Replace</button>
+            </div>
+            {% endif %}
+            <div class="secret-input" data-input="{{ f.name }}" {% if hints.get(f.name) %}hidden{% endif %}>
+              <input type="password" id="{{ f.name }}" name="{{ f.name }}" autocomplete="new-password"
+                     aria-labelledby="{{ f.name }}-label" placeholder="{{ 'Paste the new value' if hints.get(f.name) else 'Paste the value' }}">
+              <button type="button" class="btn secondary" data-reveal="{{ f.name }}">Show</button>
+              {% if hints.get(f.name) %}<button type="button" class="btn ghost" data-keep="{{ f.name }}">Cancel</button>{% endif %}
+            </div>
+          {% else %}
+            {% set choices = options.get(f.options) or [] if f.kind == "odoo" else [] %}
+            {% set searchable = choices|length > 30 %}
+            <div class="label-line"><label for="{{ f.name }}{{ '-search' if searchable }}">{{ f.label }}</label>{{ tip(f) }}</div>
+            {% if f.kind == "textarea" %}
+              <textarea id="{{ f.name }}" name="{{ f.name }}" spellcheck="false">{{ value or "" }}</textarea>
+            {% elif f.kind == "select" %}
+              <select id="{{ f.name }}" name="{{ f.name }}">
+                {% for option, text in f.options %}
+                <option value="{{ option }}" {% if (value or "") == option %}selected{% endif %}>{{ text }}</option>
+                {% endfor %}
+              </select>
+            {% elif searchable %}
+              {% set ns = namespace(label="") %}
+              {% for option, text in choices %}{% if option == value %}{% set ns.label = text %}{% endif %}{% endfor %}
+              <input type="text" id="{{ f.name }}-search" list="{{ f.name }}-list" value="{{ ns.label }}"
+                     placeholder="Type to search {{ choices|length }} names" autocomplete="off" data-combo="{{ f.name }}">
+              <input type="hidden" id="{{ f.name }}" name="{{ f.name }}" value="{{ value if value is not none else '' }}">
+              <datalist id="{{ f.name }}-list">
+                {% for option, text in choices %}<option value="{{ text }}" data-id="{{ option }}"></option>{% endfor %}
+              </datalist>
+              <div class="help combo-miss" data-combo-miss="{{ f.name }}" hidden>Pick a name from the list.</div>
+            {% elif choices %}
+              <select id="{{ f.name }}" name="{{ f.name }}">
+                <option value="">Choose…</option>
+                {% for option, text in choices %}
+                <option value="{{ option }}" {% if value == option %}selected{% endif %}>{{ text }}</option>
+                {% endfor %}
+              </select>
+            {% elif f.kind == "odoo" %}
+              <input type="number" id="{{ f.name }}" name="{{ f.name }}" value="{{ value if value is not none else '' }}" placeholder="Odoo ID">
+            {% elif f.kind in ("int", "float") %}
+              <input type="number" {% if f.kind == "float" %}step="any"{% endif %} id="{{ f.name }}" name="{{ f.name }}"
+                     value="{{ value if value is not none else '' }}">
+            {% elif f.kind == "date" %}
+              <input type="date" id="{{ f.name }}" name="{{ f.name }}" value="{{ (value or '')[:10] }}">
+            {% else %}
+              <input type="text" id="{{ f.name }}" name="{{ f.name }}" value="{{ value or '' }}"
+                     {% if f.kind == "pattern" %}class="code" spellcheck="false"{% endif %}>
+            {% endif %}
+          {% endif %}
+          {% if f.help and f.kind != "bool" %}<div class="help">{{ f.help }}</div>{% endif %}
+          {% if f.kind == "odoo" and not options.get(f.options) %}
+          <div class="help">The list could not be loaded from Odoo{% if odoo_error %} ({{ odoo_error }}){% endif %}, so enter the ID.
+            Check the connection in <a href="{{ url_for('web.settings') }}">Settings</a>.</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        {% if extra == "mailbox" and title_ == "Outlook app" %}
+        <div class="field wide">
+          <span class="label">Redirect URI</span>
+          <div class="copy-line"><code id="redirect-uri">{{ redirect_uri }}</code>
+            <button type="button" class="btn secondary" data-copy="redirect-uri">{{ icon("copy") }} Copy</button></div>
+          <div class="help">Add this to the Azure app under Authentication before connecting.</div>
+        </div>
+        {% endif %}
+        {% if extra == "settings" and title_ == "Odoo" %}
+        <div class="field wide"><button class="btn secondary" name="then" value="test-odoo">{{ icon("plug") }} Save and test the connection</button></div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+
+  <div class="savebar {{ 'show' if is_new else '' }}" id="savebar" role="region" aria-label="Save">
+    <span>{{ "New " ~ form.singular if is_new else "You have unsaved changes" }}</span>
+    <div class="actions">
+      {% if is_new %}<a class="btn ghost" href="{{ url_for('web.records', key=key) }}">Cancel</a>
+      {% else %}<button type="button" class="btn ghost" data-discard>Discard</button>{% endif %}
+      <button class="btn">{{ "Create " ~ form.singular if is_new else "Save changes" }}</button>
+    </div>
+  </div>
+</form>
+
+{% if extra == "mailbox" and record_id %}
+<div class="card" style="margin-top:20px">
+  <div class="card-body danger-card">
+    <div><h2>Clear and start over</h2>
+      <p>Removes this mailbox's fetched emails, saved files and run history, and forgets where reading stopped.
+        The next read fetches the mail again, from <i>Read mail received from</i> or the look-back window.
+        Settings, the Outlook connection and records already in Odoo are kept.</p></div>
+    <form method="post" action="{{ url_for('web.clear_mailbox', mailbox_id=record_id) }}"
+          data-confirm="Clear all fetched emails, files and run history of this mailbox? This cannot be undone. Turn off Read automatically first if you don't want it to fetch again right away.">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn danger">{{ icon("rotate") }} Clear</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if key and record_id %}
+<div class="card" style="margin-top:20px">
+  <div class="card-body danger-card">
+    <div><h2>Delete {{ form.singular }}</h2>
+      <p>{% if extra == "mailbox" %}A mailbox that has emails can't be deleted. Clear it first, or switch off Active instead.{% else %}This can't be undone.{% endif %}</p></div>
+    <form method="post" action="{{ url_for('web.delete', key=key, record_id=record_id) }}"
+          data-confirm="Delete this {{ form.singular }}? This cannot be undone.">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn danger">Delete</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
