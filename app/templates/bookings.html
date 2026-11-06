@@ -2,13 +2,9 @@
 {% from "_icons.html" import icon %}
 {% set fill = true %}
 {% block content %}
-<div class="page-head">
-  <div><h1>Bookings</h1>
-    <p>Every freight booking the service created or updated in Odoo. Open one to check what the service wrote, and from which email, against what Odoo holds now.</p></div>
-  {% if rows %}<div class="actions">
-    <div class="search">{{ icon("search") }}<input type="search" placeholder="Filter bookings" aria-label="Filter bookings" data-filter="#records"></div>
-  </div>{% endif %}
-</div>
+{% from "_ui.html" import control_panel %}
+{{ control_panel("Bookings", pager=pager, search={"filter": "#records", "placeholder": "Filter this page"} if rows else None,
+                 intro="Every freight booking the service created or updated in Odoo. Open one to check what the service wrote, and from which email, against what Odoo holds now.") }}
 
 {% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read, so only the service's side is shown: {{ error }}</span></div>{% endif %}
 

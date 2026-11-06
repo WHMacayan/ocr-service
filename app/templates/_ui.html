@@ -1,0 +1,50 @@
+{% from "_icons.html" import icon %}
+
+{# Every page's header, laid out as Odoo's control panel: breadcrumb and title on the left, the
+   search in the middle, the pager and the page's buttons (the call block) on the right, and a
+   one-line description below.
+   search: {"filter": "#table", "placeholder": …} filters the rows shown;
+           {"value": …, "placeholder": …, "keep": {name: value}} searches on the server (?q=). #}
+{% macro control_panel(title, crumbs=(), intro=None, search=None, pager=None, badges=()) -%}
+<div class="page-head o-cp">
+  <div class="o-cp-title">
+    {%- for label, href in crumbs %}<a class="o-crumb" href="{{ href }}">{{ label }}</a><span class="o-crumb-sep" aria-hidden="true">/</span>{% endfor %}
+    <h1>{{ title }}</h1>
+    {%- for kind, label in badges if label %}<span class="badge {{ kind }}">{{ label }}</span>{% endfor %}
+  </div>
+  <div class="o-cp-search">
+    {%- if search and search.filter %}
+    <div class="search">{{ icon("search") }}<input type="search" placeholder="{{ search.placeholder }}" aria-label="{{ search.placeholder }}" data-filter="{{ search.filter }}"></div>
+    {%- elif search %}
+    <form class="search" method="get" role="search">
+      {%- for name, value in (search.keep or {}).items() if value %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+      {{ icon("search") }}<input type="search" name="q" value="{{ search.value or '' }}" placeholder="{{ search.placeholder }}" aria-label="{{ search.placeholder }}">
+    </form>
+    {%- endif %}
+  </div>
+  <div class="o-cp-right actions">
+    {%- if pager and pager.total %}{{ pager_nav(pager) }}{% endif %}
+    {{- caller() if caller }}
+  </div>
+  {%- if intro %}<p class="o-cp-intro">{{ intro }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Odoo's pager: "1-80 / 374"; the range can be typed (1-200, then Enter); ‹ › turn the page. #}
+{% macro pager_nav(p) -%}
+<nav class="o-pager" aria-label="Pages">
+  <form class="o-pager-form" method="get">
+    {%- for name, value in p.keep.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    {%- set shown = p.first ~ "-" ~ p.last %}
+    <input class="o-pager-range" name="range" value="{{ shown }}" size="{{ shown|length }}" autocomplete="off" spellcheck="false"
+           title="Type the rows to show, such as 1-200, and press Enter" aria-label="Rows shown: type a range such as 1-200 and press Enter">
+    <span class="o-pager-total">/ {{ p.total }}</span>
+  </form>
+  {%- if p.turns %}
+  <span class="o-pager-btns">
+    <a class="btn secondary o-pager-btn" href="{{ p.prev }}" aria-label="Previous page">{{ icon("back") }}</a>
+    <a class="btn secondary o-pager-btn" href="{{ p.next }}" aria-label="Next page">{{ icon("chevron") }}</a>
+  </span>
+  {%- endif %}
+</nav>
+{%- endmacro %}

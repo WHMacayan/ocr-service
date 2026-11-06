@@ -2,17 +2,11 @@
 {% from "_icons.html" import icon %}
 {% block content %}
 {% set number = (odoo_row or {}).get("booking_number") or (written.get("booking_number") or {}).get("value") or "#" ~ booking_id %}
-<div class="page-head">
-  <div>
-    <div class="crumbs"><a href="{{ url_for('web.booking_list') }}">Bookings</a>{{ icon("chevron") }}<span>{{ number }}</span></div>
-    <div class="title-line"><h1>{{ number }}</h1>
-      {% if state_label %}<span class="badge">{{ state_label }}</span>{% endif %}</div>
-  </div>
-  <div class="actions">
-    <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
-    <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
-  </div>
-</div>
+{% from "_ui.html" import control_panel %}
+{% call control_panel(number, crumbs=[("Bookings", url_for('web.booking_list'))], badges=[("", state_label)]) %}
+  <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
+  <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
+{% endcall %}
 
 {% if error %}
 <div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read, so only the service's side is shown: {{ error }}</span></div>

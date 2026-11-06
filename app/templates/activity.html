@@ -2,21 +2,16 @@
 {% from "_icons.html" import icon %}
 {% set fill = true %}
 {% block content %}
-{% set older_shown = request.args.get("before") %}
+{% set older_shown = pager.offset > 0 %}
 <div class="page">
 {% set kind_icons = {"settings": "sliders", "security": "key", "processing": "inbox", "odoo": "external"} %}
 {% set level_badges = {"error": ("failed", "Error"), "warning": ("review", "Warning")} %}
 
-<div class="page-head">
-  <div><h1>Activity</h1>
-    <p>Who changed what, every sign-in, what the service processed and every record it wrote to Odoo.
-      Kept for {{ keep_days or "?" }} days.</p></div>
-  <form class="search" method="get" role="search">
-    {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
-    {{ icon("search") }}
-    <input type="search" name="q" value="{{ query }}" placeholder="Search the activity" aria-label="Search the activity">
-  </form>
-</div>
+{% from "_ui.html" import control_panel %}
+{{ control_panel("Activity", pager=pager,
+                 search={"value": query, "placeholder": "Search the activity", "keep": {"kind": kind}},
+                 intro="Who changed what, every sign-in, what the service processed and every record it wrote to Odoo. Kept for "
+                       ~ (keep_days or "?") ~ " days.") }}
 
 <nav class="tabs" aria-label="Filter by type">
   <a href="{{ url_for('web.activity', q=query or None) }}" {% if not kind %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
@@ -49,9 +44,6 @@
     {% endfor %}
     </tbody>
   </table>
-  {% if older %}
-  <div class="table-foot"><a class="btn secondary sm" href="{{ url_for('web.activity', kind=kind, q=query or None, before=older) }}">Show older</a></div>
-  {% endif %}
 {% else %}
   <div class="empty">
     <div class="empty-icon">{{ icon("activity") }}</div>

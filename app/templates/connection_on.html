@@ -2,16 +2,11 @@
 {% from "_icons.html" import icon %}
 {% block content %}
 {% set checked = mapped.values()|map("length")|sum %}
-<div class="page-head">
-  <div>
-    <div class="crumbs"><a href="{{ url_for('web.settings') }}">Settings</a>{{ icon("chevron") }}
-      <a href="{{ url_for('web.connection', connection_id=connection.id) }}">{{ connection.name }}</a>{{ icon("chevron") }}<span>Turn on</span></div>
-    <div class="title-line"><h1>Turn on {{ connection.name }}</h1>
-      {% if connection.is_production %}<span class="badge failed">Production</span>{% endif %}</div>
-    <p>Once on, every email received from the start date is written to {{ connection.database }} at {{ connection.url }},
-      alongside the other connections that are on.</p>
-  </div>
-</div>
+{% from "_ui.html" import control_panel %}
+{{ control_panel("Turn on", crumbs=[("Settings", url_for('web.settings')), (connection.name, url_for('web.connection', connection_id=connection.id))],
+                 badges=[("failed", "Production" if connection.is_production else None)],
+                 intro="Once on, every email received from the start date is written to " ~ connection.database ~ " at "
+                       ~ connection.url ~ ", alongside the other connections that are on.") }}
 
 <section class="card">
   <div class="card-head"><div><h2>Mapping check</h2>

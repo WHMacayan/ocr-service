@@ -3,15 +3,9 @@
 {% block content %}
 {% set group_icons = {"emails": "inbox", "mailboxes": "mail", "vendors": "users", "formats": "type",
                       "settings": "sliders", "activity": "activity", "pages": "chevron"} %}
-<div class="page-head">
-  <div><h1>Search</h1>
-    <p>Emails (with the text read from their files), mailboxes, vendor mappings, subject formats, settings and the activity log.</p></div>
-</div>
-
-<form class="search big" method="get" role="search">
-  {{ icon("search") }}
-  <input type="search" name="q" value="{{ q }}" placeholder="Booking number, container, sender, vendor…" aria-label="Search" autofocus>
-</form>
+{% from "_ui.html" import control_panel %}
+{{ control_panel("Search", search={"value": q, "placeholder": "Booking number, container, sender, vendor…"},
+                 intro="Emails (with the text read from their files), mailboxes, vendor mappings, subject formats, settings and the activity log.") }}
 <p class="search-help">Every word must match. Use <code>"quotes"</code> for a phrase, and narrow emails with
   <code>state:failed</code>, <code>from:maersk.com</code> or <code>mailbox:bookings</code>. <code>in:vendors</code> keeps one kind of result.</p>
 

@@ -20,10 +20,8 @@
     </header>
 {% else %}
 <div class="page">
-  <div class="page-head">
-    <div><h1>{{ title }}</h1>
-      <p>The connections and limits the service works with. Changes apply on the worker's next check.</p></div>
-  </div>
+  {% from "_ui.html" import control_panel %}
+  {{ control_panel(title, intro="The connections and limits the service works with. Changes apply on the worker's next check.") }}
   <div class="settings-grid">
     <nav class="section-nav" aria-label="Settings sections">
       <a href="#odoo-connections">Odoo connections</a>

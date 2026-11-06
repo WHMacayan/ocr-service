@@ -1036,6 +1036,35 @@ body { font-size: 14px; }
   .o-user-name { display: none; }
 }
 
+/* ── one header on every page (templates/_ui.html): title | search | pager and buttons ───────── */
+.o-cp { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 520px) minmax(0, 1fr); align-items: center;
+        gap: 6px 16px; margin: 0 0 6px; padding: 14px 0 12px; border: 0; }
+.o-cp-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.o-cp-title h1 { margin: 0; font-size: 20px; font-weight: 400; overflow-wrap: anywhere; }
+.o-crumb { font-size: 20px; color: var(--accent-text); text-decoration: none; }
+.o-crumb:hover { text-decoration: underline; }
+.o-crumb-sep { font-size: 20px; color: var(--text-3); }
+.o-cp-search .search { width: 100%; }
+.o-cp-right { justify-content: flex-end; gap: 8px; }
+.o-cp-intro { grid-column: 1 / -1; margin: 0; font-size: 12.5px; color: var(--text-3); max-width: none; }
+.o-pager { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.o-pager-form { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.o-pager-range { padding: 3px 4px; border: 1px solid transparent; border-radius: 5px; background: none; color: var(--text);
+                 font: 600 14px var(--sans); text-align: right; cursor: text; }
+.o-pager-range:hover { border-color: var(--border-strong); }
+.o-pager-range:focus { outline: none; border-color: var(--accent-text); background: var(--card); text-align: left; }
+.o-pager-total { font-size: 14px; color: var(--text-2); }
+.o-pager-btns { display: inline-flex; }
+.o-pager-btn { width: 38px; padding: 0; }
+.o-pager-btn:first-child { border-radius: 6px 0 0 6px; }
+.o-pager-btn:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+/* the same title size in the list panes as in page headers */
+.pane-title h1 { font-size: 20px; font-weight: 400; }
+@media (max-width: 900px) {
+  .o-cp { grid-template-columns: minmax(0, 1fr); }
+  .o-cp-right { justify-content: flex-start; }
+}
+
 /* A hidden tooltip takes no room, so one near the right edge cannot widen the page. */
 .tip-text { display: none; }
 .tip:hover .tip-text, .tip-btn:focus-visible + .tip-text, .tip.open .tip-text { display: block; animation: fade-in .15s ease-out; }

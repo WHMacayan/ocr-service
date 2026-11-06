@@ -83,6 +83,37 @@ def test_times_are_marked_for_the_viewers_time_zone(client):
     assert '<time datetime="' in page and "(UTC)" not in page
 
 
+def test_activity_pages_like_odoo_and_takes_a_typed_range(client, db):
+    signed_in(client)
+    with db:
+        db.executemany("INSERT INTO activity (kind, actor, summary) VALUES ('processing', 'worker', ?)",
+                       [(f"Entry {n:03}",) for n in range(200)])
+    total = db.execute("SELECT COUNT(*) FROM activity").fetchone()[0]
+    first = client.get("/activity").get_data(as_text=True)
+    assert f'value="1-80"' in first and f"/ {total}" in first
+    assert "Entry 199" in first and "Entry 119" not in first
+    assert 'href="/activity?offset=80"' in first                        # next page
+    second = client.get("/activity?offset=80").get_data(as_text=True)
+    assert 'value="81-160"' in second and "Entry 119" in second and "Entry 199" not in second
+    typed = client.get("/activity?range=1-150").get_data(as_text=True)  # typed into the pager
+    assert 'value="1-150"' in typed and "Entry 060" in typed
+    filtered = client.get("/activity?q=Entry+00").get_data(as_text=True)
+    assert 'value="1-10"' in filtered and "/ 10" in filtered and 'name="q" value="Entry 00"' in filtered
+
+
+def test_odoo_lists_ask_odoo_only_for_the_page_shown(client, db, monkeypatch):
+    from app import odoo_pages
+    signed_in(client)
+    asked = []
+    monkeypatch.setattr("app.web.odoo_pages.record_ids", lambda db, purpose: set(range(1, 201)))
+    monkeypatch.setattr("app.web.odoo_pages.email_counts", lambda db, purpose: {})
+    monkeypatch.setattr("app.web._odoo_or_error", lambda: (object(), None))
+    monkeypatch.setattr(odoo_pages, "list_rows", lambda odoo, model, ids, columns: (
+        asked.append(sorted(ids)) or ([("name", "Name")], [{"id": i, "raw": {}, "name": f"B{i}"} for i in sorted(ids, reverse=True)])))
+    page = client.get("/scraped-bills?offset=80").get_data(as_text=True)
+    assert asked == [list(range(41, 121))] and 'value="81-160"' in page and "/ 200" in page
+
+
 def test_the_login_has_its_own_cookie_and_lasts_a_week(client):
     signed_in(client)
     cookie = client.get_cookie("ocr_session")

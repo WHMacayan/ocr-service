@@ -2,12 +2,9 @@
 {% from "_icons.html" import icon %}
 {% set fill = true %}
 {% block content %}
-<div class="page-head">
-  <div><h1>{{ title }}</h1><p>{{ intro }}</p></div>
-  {% if rows %}<div class="actions">
-    <div class="search">{{ icon("search") }}<input type="search" placeholder="Filter {{ title|lower }}" aria-label="Filter {{ title|lower }}" data-filter="#records"></div>
-  </div>{% endif %}
-</div>
+{% from "_ui.html" import control_panel %}
+{{ control_panel(title, intro=intro, pager=pager,
+                 search={"filter": "#records", "placeholder": "Filter this page"} if rows else None) }}
 
 {% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>{% endif %}
 

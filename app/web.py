@@ -413,14 +413,43 @@ def describe_changes(fields, before, after):
 
 ACTIVITY_LABELS = {"settings": "Setting changes", "security": "Sign-ins and security",
                    "processing": "Processing", "odoo": "Odoo writes"}
-ACTIVITY_PAGE = 100
+
+# ── the pager, as Odoo's: "1-80 / 374", previous / next, and a range you can type ──
+
+PAGE_SIZE = 80
+PAGE_MAX = 500
+_RANGE = re.compile(r"\s*(\d+)\s*(?:-\s*(\d+))?\s*")
+
+
+def pager(total):
+    """The page of a list to show: ?range=1-200 (typed into the pager) or ?offset=&limit=.
+    Like Odoo's pager, previous on the first page goes to the last one and next on the last to the first."""
+    offset = max(request.args.get("offset", 0, type=int), 0)
+    limit = request.args.get("limit", PAGE_SIZE, type=int)
+    typed = _RANGE.fullmatch(request.args.get("range") or "")
+    if typed:
+        first = max(int(typed.group(1)), 1)
+        last = max(int(typed.group(2) or first), first)
+        offset, limit = first - 1, last - first + 1
+    limit = min(max(limit, 1), PAGE_MAX)
+    if offset >= total:
+        offset = (max(total - 1, 0) // limit) * limit
+    keep = {k: v for k, v in request.args.items() if k not in ("offset", "limit", "range")}
+
+    def link(at):
+        return url_for(request.endpoint, **(request.view_args or {}), **keep, offset=at or None,
+                       limit=None if limit == PAGE_SIZE else limit)
+
+    last_page = (max(total - 1, 0) // limit) * limit
+    return {"offset": offset, "limit": limit, "total": total, "first": offset + 1 if total else 0,
+            "last": min(offset + limit, total), "keep": keep, "turns": total > limit,
+            "prev": link(offset - limit if offset else last_page), "next": link(offset + limit if offset + limit < total else 0)}
 
 
 @bp.route("/activity")
 def activity():
     kind = request.args.get("kind")
     query = (request.args.get("q") or "").strip()
-    before = request.args.get("before", type=int)
     where, args = [], []
     if kind in ACTIVITY_LABELS:
         where.append("kind = ?")
@@ -428,16 +457,13 @@ def activity():
     if query:
         where.append("(summary LIKE ? OR detail LIKE ?)")
         args += [f"%{query}%"] * 2
-    if before:
-        where.append("id < ?")
-        args.append(before)
-    rows = g.db.execute(
-        "SELECT * FROM activity" + (" WHERE " + " AND ".join(where) if where else "")
-        + " ORDER BY id DESC LIMIT ?", (*args, ACTIVITY_PAGE + 1)).fetchall()
+    sql_where = " WHERE " + " AND ".join(where) if where else ""
+    page = pager(g.db.execute(f"SELECT COUNT(*) FROM activity{sql_where}", args).fetchone()[0])
+    rows = g.db.execute(f"SELECT * FROM activity{sql_where} ORDER BY id DESC LIMIT ? OFFSET ?",
+                        (*args, page["limit"], page["offset"])).fetchall()
     counts = dict(g.db.execute("SELECT kind, COUNT(*) FROM activity GROUP BY kind").fetchall())
-    older = rows[ACTIVITY_PAGE - 1]["id"] if len(rows) > ACTIVITY_PAGE else None
-    return render_template("activity.html", title="Activity", rows=rows[:ACTIVITY_PAGE], kind=kind, query=query,
-                           labels=ACTIVITY_LABELS, counts=counts, total=sum(counts.values()), older=older,
+    return render_template("activity.html", title="Activity", rows=rows, kind=kind, query=query, pager=page,
+                           labels=ACTIVITY_LABELS, counts=counts, total=sum(counts.values()),
                            keep_days=store.get_setting(g.db, "activity_days"))
 
 
@@ -1095,16 +1121,18 @@ def _odoo_record(page, record_id, crumbs, purpose=None):
 def _odoo_list(title, intro, model, ids, columns, endpoint, id_arg, empty, purpose=None):
     odoo, error = _odoo_or_error()
     heads, rows = [], []
-    if odoo and ids:
+    page = pager(len(ids))
+    shown = sorted(ids, reverse=True)[page["offset"]:page["offset"] + page["limit"]]  # newest first, Odoo asked for these only
+    if odoo and shown:
         try:
-            heads, rows = odoo_pages.list_rows(odoo, model, ids, columns)
+            heads, rows = odoo_pages.list_rows(odoo, model, set(shown), columns)
         except Exception as exc:
             error = str(exc)
     counts = odoo_pages.email_counts(g.db, purpose) if purpose else {}
     for row in rows:
         row["emails"] = counts.get(row["id"], 0)
     return render_template("odoo_list.html", title=title, intro=intro, heads=heads, rows=rows, endpoint=endpoint,
-                           id_arg=id_arg, empty=empty, error=error)
+                           id_arg=id_arg, empty=empty, error=error, pager=page)
 
 
 @bp.route("/scraped-bills")
@@ -1171,7 +1199,9 @@ def _odoo_or_error():
 
 @bp.route("/bookings")
 def booking_list():
-    ids = sorted(bookings.booking_ids(g.db), reverse=True)
+    every = sorted(bookings.booking_ids(g.db), reverse=True)
+    page = pager(len(every))
+    ids = every[page["offset"]:page["offset"] + page["limit"]]  # Odoo is asked for the page shown only
     written = bookings.service_values(g.db, ids)
     odoo, error = _odoo_or_error()
     odoo_rows, info = {}, {}
@@ -1198,7 +1228,7 @@ def booking_list():
                      "emails": emails_per.get(booking_id, 0), "missing_in_odoo": bool(odoo_rows) and theirs is None,
                      **{f"{f}_shown": bookings.shown((theirs or {}).get(f), info.get(f))
                         for f in ("state", "factory_id", "forwarder_id", "etd", "eta", "port_of_loading", "port_of_discharge")}})
-    return render_template("bookings.html", title="Bookings", rows=rows, error=error)
+    return render_template("bookings.html", title="Bookings", rows=rows, error=error, pager=page)
 
 
 @bp.route("/bookings/<int:booking_id>")

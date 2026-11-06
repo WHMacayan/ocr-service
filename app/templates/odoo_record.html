@@ -1,17 +1,11 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <div class="crumbs">{% for label, href in crumbs %}<a href="{{ href }}">{{ label }}</a>{{ icon("chevron") }}{% endfor %}<span>{{ title }}</span></div>
-    <div class="title-line"><h1>{{ title }}</h1></div>
-    {% if record and record.subtitle %}<p>{{ record.subtitle }}</p>{% endif %}
-  </div>
-  <div class="actions">
-    <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
-    <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
-  </div>
-</div>
+{% from "_ui.html" import control_panel %}
+{% call control_panel(title, crumbs=crumbs, intro=record.subtitle if record else None) %}
+  <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
+  <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
+{% endcall %}
 
 {% if error %}
 <div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>

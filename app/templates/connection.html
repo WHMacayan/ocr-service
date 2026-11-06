@@ -5,15 +5,12 @@
   <span class="tip-text" role="tooltip" id="tip-{{ f.name }}">{{ f.tip }}</span></span>{% endif %}{% endmacro %}
 {% block content %}
 {% set is_new = not connection_id %}
-<div class="page-head">
-  <div>
-    <div class="crumbs"><a href="{{ url_for('web.settings') }}">Settings</a>{{ icon("chevron") }}<span>Odoo connection</span></div>
-    <div class="title-line"><h1>{{ record.name or "New Odoo connection" }}</h1>
-      {% if record.is_production %}<span class="badge failed">Production</span>{% endif %}
-      {% if not is_new %}<span class="badge {{ 'ok' if record.active else 'muted-badge' }}">{{ "On" if record.active else ("Off" if complete else "Incomplete") }}</span>{% endif %}</div>
-  </div>
+{% from "_ui.html" import control_panel %}
+{% call control_panel(record.name or "New Odoo connection", crumbs=[("Settings", url_for('web.settings'))],
+                      badges=[("failed", "Production" if record.is_production else None),
+                              ("ok" if record.active else "muted-badge",
+                               None if is_new else ("On" if record.active else ("Off" if complete else "Incomplete")))]) %}
   {% if not is_new %}
-  <div class="actions">
     {% if record.active %}
     <form method="post" action="{{ url_for('web.connection_off', connection_id=connection_id) }}"
           {% if record.is_production %}data-confirm="Turn off {{ record.name }}? Nothing more is written to production until it is turned on again."{% endif %}>
@@ -23,9 +20,8 @@
     {% elif complete %}
     <a class="btn" href="{{ url_for('web.connection_on', connection_id=connection_id) }}">Turn on</a>
     {% endif %}
-  </div>
   {% endif %}
-</div>
+{% endcall %}
 
 {% if record.last_check_note and not record.active %}
 <div class="callout bad" style="margin-bottom:20px">{{ icon("alert") }}<span><b>Last check{% if record.last_check_at %} ({{ record.last_check_at|when }}){% endif %}:</b>
