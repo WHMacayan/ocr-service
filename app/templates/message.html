@@ -24,11 +24,14 @@
     <div class="callout {{ 'bad' if message.state == 'failed' else 'warn' }}">{{ icon("alert") }}<span>{{ message.note }}</span></div>
     {% endif %}
 
-    <dl class="stat-grid">
-      <div><dt>Files</dt><dd>{{ files|length }}</dd></div>
-      <div><dt>In Odoo</dt><dd>{{ (written.records|length) if written else 0 }} record{{ "s" if not written or written.records|length != 1 }}</dd></div>
-      <div><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
-    </dl>
+    <section class="card kv-card">
+      <h2>Summary</h2>
+      <dl class="kv">
+        <div class="kv-row"><dt>Files</dt><dd>{{ files|length }}</dd></div>
+        <div class="kv-row"><dt>Records in Odoo</dt><dd>{{ (written.records|length) if written else 0 }}</dd></div>
+        <div class="kv-row"><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
+      </dl>
+    </section>
 
     {% set copies = thread|sum(attribute="copies", start=[]) %}
     {% if copies|length > 1 %}

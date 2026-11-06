@@ -27,11 +27,14 @@
 {% endif %}
 
 {% if odoo_row and (odoo_row.missing_fields or odoo_row.open_conflict_count or odoo_row.has_uncertain_match) %}
-<div class="card" style="margin-bottom:20px"><dl class="facts" style="margin:0">
-  {% if odoo_row.missing_fields %}<div><dt>Odoo is still waiting on</dt><dd>{{ odoo_row.missing_fields }}</dd></div>{% endif %}
-  {% if odoo_row.open_conflict_count %}<div><dt>Open conflicts</dt><dd>{{ odoo_row.open_conflict_count }}</dd></div>{% endif %}
-  {% if odoo_row.has_uncertain_match %}<div><dt>Uncertain match</dt><dd>A party was matched by name only: check it</dd></div>{% endif %}
-</dl></div>
+<section class="card kv-card" style="margin-bottom:20px">
+  <h2>Needs attention</h2>
+  <dl class="kv">
+    {% if odoo_row.missing_fields %}<div class="kv-row"><dt>Odoo is still waiting on</dt><dd>{{ odoo_row.missing_fields }}</dd></div>{% endif %}
+    {% if odoo_row.open_conflict_count %}<div class="kv-row"><dt>Open conflicts</dt><dd>{{ odoo_row.open_conflict_count }}</dd></div>{% endif %}
+    {% if odoo_row.has_uncertain_match %}<div class="kv-row"><dt>Uncertain match</dt><dd>A party was matched by name only: check it</dd></div>{% endif %}
+  </dl>
+</section>
 {% endif %}
 
 <div class="record-grid">

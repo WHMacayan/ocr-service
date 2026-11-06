@@ -28,30 +28,26 @@
 <div class="callout {{ kind }}" style="margin-bottom:20px">{{ icon("alert") }}<span style="white-space:pre-line">{{ text }}</span></div>
 {% endfor %}
 
-{% macro field_tiles(fields) %}
-<dl class="field-grid">
-  {% for label, value in fields %}
-  {% set text = (value if value not in (none, false, "") else "–")|string %}
-  <div class="field-tile {{ 'wide' if text|length > 48 or '\n' in text }}">
-    <dt>{{ label }}</dt><dd>{{ text }}</dd>
-  </div>
-  {% endfor %}
-</dl>
+{% macro field_card(title, fields) %}
+<section class="card kv-card">
+  <h2>{{ title }}</h2>
+  <dl class="kv">
+    {% for label, value in fields %}
+    {% set text = (value if value not in (none, false, "") else "–")|string %}
+    <div class="kv-row {{ 'long' if text|length > 40 or '\n' in text }}"><dt>{{ label }}</dt><dd>{{ text }}</dd></div>
+    {% endfor %}
+  </dl>
+</section>
 {% endmacro %}
 
-{% for section, fields in record.sections if fields %}
-<section class="card record-card">
-  <div class="card-head"><div><h2>{{ section }}</h2></div></div>
-  {{ field_tiles(fields) }}
-</section>
-{% endfor %}
+{# Field sections side by side in equal columns; tables full width below. #}
+<div class="kv-grid">
+  {% for section, fields in record.sections if fields %}{{ field_card(section, fields) }}{% endfor %}
+  {% for tab in record.tabs if tab.fields is defined and tab.fields %}{{ field_card(tab.title, tab.fields) }}{% endfor %}
+</div>
 
-{% for tab in record.tabs if tab.fields is not defined or tab.fields %}
-<section class="card {{ 'record-card' if tab.fields is defined else 'table-card' }}">
-  {% if tab.fields is defined %}
-  <div class="card-head"><div><h2>{{ tab.title }}</h2></div></div>
-  {{ field_tiles(tab.fields) }}
-  {% else %}
+{% for tab in record.tabs if tab.fields is not defined %}
+<section class="card table-card">
   <div class="card-head"><div><h2>{{ tab.title }}</h2><p>{{ tab.rows|length }} in Odoo</p></div></div>
   {% if tab.rows %}
   <div class="table-scroll">
@@ -72,7 +68,6 @@
   </div>
   {% else %}
   <div class="empty"><p>None in Odoo.</p></div>
-  {% endif %}
   {% endif %}
 </section>
 {% endfor %}

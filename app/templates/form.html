@@ -34,14 +34,14 @@
 
 {% if extra == "mailbox" and record_id %}
 {% set connected = record.refresh_token %}
-<div class="card">
-  <dl class="facts" id="mailbox-status" data-live style="margin:0">
-    <div><dt>Outlook</dt><dd><span class="badge {{ 'ok' if connected else 'error' }}">{{ "Connected" if connected else "Not connected" }}</span></dd></div>
-    <div><dt>Last read</dt><dd><span class="badge {{ record.status }}">{{ status_labels.get(record.status, record.status) }}</span>
-      {% if record.last_sync %}<span class="muted">{{ record.last_sync|when }}</span>{% endif %}</dd></div>
-    <div><dt>Reads</dt><dd>{% if record.auto_sync %}Every {{ record.sync_interval }} minutes{% else %}Only when you press Read now{% endif %}</dd></div>
+<div class="card kv-card">
+  <h2>Status</h2>
+  <dl class="kv" id="mailbox-status" data-live>
+    <div class="kv-row"><dt>Outlook</dt><dd><span class="badge {{ 'ok' if connected else 'error' }}">{{ "Connected" if connected else "Not connected" }}</span></dd></div>
+    <div class="kv-row"><dt>Last read</dt><dd>{% if record.last_sync %}<span class="faint">{{ record.last_sync|when }}</span> {% endif %}<span class="badge {{ record.status }}">{{ status_labels.get(record.status, record.status) }}</span></dd></div>
+    <div class="kv-row"><dt>Reads</dt><dd>{% if record.auto_sync %}Every {{ record.sync_interval }} minutes{% else %}Only when you press Read now{% endif %}</dd></div>
   </dl>
-  <div class="card-body" style="border-top:1px solid var(--border)">
+  <div class="card-body" style="border-top:1px solid var(--border-soft)">
     {% if record.last_error %}<div class="callout bad" style="margin-bottom:16px">{{ icon("alert") }}<span>{{ record.last_error }}</span></div>{% endif %}
     {% if record.group_miss_note %}<div class="callout warn" style="margin-bottom:16px">{{ icon("alert") }}<span>{{ record.group_miss_note }}</span></div>{% endif %}
     <div class="actions">
