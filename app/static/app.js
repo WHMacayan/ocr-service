@@ -363,7 +363,9 @@ async function poll() {
       const seen = new Set([...old.querySelectorAll("[data-key]")].map(el => el.dataset.key));
       const open = new Set([...old.querySelectorAll("details[id]")].filter(d => d.open).map(d => d.id));
       const shut = new Set([...old.querySelectorAll("details[id]")].filter(d => !d.open).map(d => d.id));
+      const top = old.scrollTop;  // a list that scrolls on its own stays where it was
       old.replaceWith(fresh);
+      fresh.scrollTop = top;
       init(fresh);
       fresh.querySelectorAll("details[id]").forEach(d => {
         if (open.has(d.id)) d.open = true;

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% set fill = true %}
 {% block content %}
 {% set older_shown = request.args.get("before") %}
 <div class="page">
@@ -26,7 +27,7 @@
 </nav>
 <div style="height:20px"></div>
 
-<div class="card table-card" id="activity-feed" {% if not older_shown %}data-live{% endif %}>
+<div class="card table-card fill-card" id="activity-feed" {% if not older_shown %}data-live{% endif %}>
 {% if rows %}
   <table class="data activity">
     <thead><tr><th>When</th><th>What happened</th><th>Type</th><th>By</th></tr></thead>

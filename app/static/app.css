@@ -115,6 +115,13 @@ svg.icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: no
 
 .main { min-width: 0; padding: 0 40px 120px; }
 .main.is-split { padding: 0; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+/* List pages: the heading and column names stay put, only the rows scroll. */
+.main.is-fill { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 24px; }
+.main.is-fill > * { flex: none; }
+.main.is-fill > .page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.main.is-fill > .page > * { flex: none; }
+.main.is-fill .fill-card { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.fill-card thead th { position: sticky; top: 0; z-index: 2; }
 
 /* Which Odoo is being written to: always in view. */
 .env-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 16px 0 24px; padding: 8px 14px;
@@ -704,6 +711,9 @@ pre.block { margin: 0; white-space: pre-wrap; word-break: break-word; font: 13px
   .data .clip { max-width: none; white-space: normal; }
   .data tr[data-href]:hover td { background: none; }
   .table-scroll .data { min-width: 0; }
+  .main.is-fill { height: auto; display: block; overflow: visible; padding-bottom: 120px; }
+  .main.is-fill > .page { display: block; }
+  .main.is-fill .fill-card { overflow: visible; }
   .field-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; padding: 14px 16px 16px; }
   .field-tile { padding: 10px 12px; }
 }

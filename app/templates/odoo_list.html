@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% set fill = true %}
 {% block content %}
 <div class="page-head">
   <div><h1>{{ title }}</h1><p>{{ intro }}</p></div>
@@ -10,7 +11,7 @@
 
 {% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>{% endif %}
 
-<div class="card table-card">
+<div class="card table-card fill-card">
 {% if rows %}
   <table class="data" id="records">
     <thead><tr>{% for _c, label in heads %}<th>{{ label }}</th>{% endfor %}</tr></thead>

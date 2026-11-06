@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=17">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=18">
 </head>
 <body>
 {% set here = request.path %}
@@ -56,7 +56,7 @@
   </nav>
   <div class="scrim" data-menu-close></div>
 
-  <main class="main {{ 'is-split' if split else '' }}" id="main">
+  <main class="main {{ 'is-split' if split else '' }} {{ 'is-fill' if fill else '' }}" id="main">
     {% set production_on = connections_on|selectattr("is_production")|list %}
     {% set others_on = connections_on|rejectattr("is_production")|list %}
     {% if connections_on %}
@@ -107,6 +107,6 @@
   {% endfor %}
 </div>
 
-<script src="{{ url_for('static', filename='app.js') }}?v=12"></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=13"></script>
 </body>
 </html>
