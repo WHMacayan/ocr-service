@@ -28,7 +28,7 @@
 </div>
 
 {% if record.last_check_note and not record.active %}
-<div class="callout bad" style="margin-bottom:20px">{{ icon("alert") }}<span><b>Last check{% if record.last_check_at %} ({{ record.last_check_at }} UTC){% endif %}:</b>
+<div class="callout bad" style="margin-bottom:20px">{{ icon("alert") }}<span><b>Last check{% if record.last_check_at %} ({{ record.last_check_at|when }}){% endif %}:</b>
   <span style="white-space:pre-line">{{ record.last_check_note }}</span></span></div>
 {% endif %}
 {% if not is_new and not complete %}

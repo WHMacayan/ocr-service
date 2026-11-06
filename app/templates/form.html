@@ -26,7 +26,7 @@
   <dl class="facts" style="margin:0">
     <div><dt>Outlook</dt><dd><span class="badge {{ 'ok' if connected else 'error' }}">{{ "Connected" if connected else "Not connected" }}</span></dd></div>
     <div><dt>Last read</dt><dd><span class="badge {{ record.status }}">{{ status_labels.get(record.status, record.status) }}</span>
-      {% if record.last_sync %}<span class="muted">{{ record.last_sync }} UTC</span>{% endif %}</dd></div>
+      {% if record.last_sync %}<span class="muted">{{ record.last_sync|when }}</span>{% endif %}</dd></div>
     <div><dt>Reads</dt><dd>{% if record.auto_sync %}Every {{ record.sync_interval }} minutes{% else %}Only when you press Read now{% endif %}</dd></div>
   </dl>
   <div class="card-body" style="border-top:1px solid var(--border)">

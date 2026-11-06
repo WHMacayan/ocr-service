@@ -27,11 +27,11 @@
 <div class="card table-card">
 {% if rows %}
   <table class="data activity">
-    <thead><tr><th>When (UTC)</th><th>What happened</th><th>Type</th><th>By</th></tr></thead>
+    <thead><tr><th>When</th><th>What happened</th><th>Type</th><th>By</th></tr></thead>
     <tbody>
     {% for a in rows %}
     <tr>
-      <td data-label="When (UTC)"><span class="num">{{ a.at }}</span></td>
+      <td data-label="When"><span class="num">{{ a.at|when }}</span></td>
       <td class="cell-main">
         <span class="what">
           {% if a.level in level_badges %}<span class="badge {{ level_badges[a.level][0] }}">{{ level_badges[a.level][1] }}</span>{% endif %}

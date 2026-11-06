@@ -57,9 +57,39 @@ def test_first_start_asks_for_a_password_then_requires_login(client):
     assert client.get("/messages").status_code == 200
 
 
-def test_post_without_csrf_token_is_refused(client):
+def test_post_without_csrf_token_is_refused(client, db):
     signed_in(client)
-    assert client.post("/settings", data={"max_retries": "3"}).status_code == 400
+    page = client.post("/settings", data={"max_retries": "3"}, follow_redirects=True).get_data(as_text=True)
+    assert "nothing was saved" in page and "Settings" in page
+    assert store.get_setting(db, "max_retries", int) == 5
+
+
+def test_an_expired_action_form_goes_back_to_the_page_it_came_from(client):
+    signed_in(client)
+    resp = client.post("/logout", data={"csrf": "old"}, headers={"Referer": "http://localhost/messages"})
+    assert resp.headers["Location"] == "/messages"
+    resp = client.post("/logout", data={"csrf": "old"}, headers={"Referer": "https://elsewhere.example/x"})
+    assert resp.headers["Location"] == "/"
+
+
+def test_times_are_marked_for_the_viewers_time_zone(client):
+    from app.web import when
+    assert when("2026-11-06 01:54:48") == ('<time datetime="2026-11-06T01:54:48Z" title="2026-11-06 01:54:48 UTC">'
+                                          '2026-11-06 01:54:48 UTC</time>')
+    assert when("2026-11-06T09:54:48+08:00").startswith('<time datetime="2026-11-06T01:54:48Z"')
+    assert when(None) == "" and when("not a time") == "not a time"
+    signed_in(client)
+    page = client.get("/activity").get_data(as_text=True)
+    assert '<time datetime="' in page and "(UTC)" not in page
+
+
+def test_background_requests_keep_the_login_form_working(client):
+    signed_in(client)
+    client.post("/logout", data={"csrf": csrf(client, "/messages")})
+    token = csrf(client, "/login")
+    client.get("/favicon.ico")  # browsers ask for this after the page loads
+    client.post("/login", data={"csrf": token, "password": "long-password"})
+    assert client.get("/messages").status_code == 200
 
 
 def test_settings_page_saves_and_keeps_an_empty_secret(client, db):

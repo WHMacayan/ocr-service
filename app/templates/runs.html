@@ -14,7 +14,7 @@
 <details class="card run" {% if loop.first %}open{% endif %}>
   <summary>
     <span class="chev">{{ icon("chevron") }}</span>
-    <span class="when">{{ run.started_at }} UTC</span>
+    <span class="when">{{ run.started_at|when }}</span>
     <span class="badge {{ run.status }}">{{ {"running": "Running", "success": "Read", "partial": "Partly read", "error": "Failed"}.get(run.status, run.status) }}</span>
     <span class="sum">{{ run.emails_matched }} new of {{ run.emails_found }} read, {{ run.documents_created }} file{{ "s" if run.documents_created != 1 }} saved{% if run.failed %}, {{ run.failed }} error{{ "s" if run.failed != 1 }}{% endif %}</span>
   </summary>

@@ -85,13 +85,13 @@
 <section class="card table-card" style="margin-top:20px">
   <div class="card-head"><div><h2>Emails that fed this record</h2><p>Open an email to see its files and what was done with them.</p></div></div>
   <table class="data">
-    <thead><tr><th>Email</th><th>Received (UTC)</th><th>State</th></tr></thead>
+    <thead><tr><th>Email</th><th>Received</th><th>State</th></tr></thead>
     <tbody>
     {% for m in emails %}
     {% set href = url_for('web.message', message_id=m.id) %}
     <tr data-href="{{ href }}">
       <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ m.subject or "No subject" }}</a><span class="sub">{{ m.sender }}</span></td>
-      <td data-label="Received (UTC)"><span class="num">{{ m.received or "" }}</span></td>
+      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
       <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span></td>
     </tr>
     {% endfor %}

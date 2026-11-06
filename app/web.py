@@ -191,15 +191,48 @@ def open_db_and_check_login():
     g.db = store.connect()
     if request.method == "POST" and not secrets.compare_digest(
             request.form.get("csrf", ""), session.get("csrf", "")):
-        abort(400, "The form expired. Go back, reload the page and try again.")
+        flash("That page was open too long, so nothing was saved. Please try again.", "error")
+        return redirect(form_page())
     if request.endpoint in ("web.login", "web.setup", "static"):
         return None
     if not store.get_setting(g.db, "admin_password_hash"):
         return redirect(url_for("web.setup"))
     if not session.get("signed_in") or session.get("version") != store.get_setting(g.db, "session_version"):
+        # Keep the form token: a background request (the browser's favicon) must not
+        # break a login form that is already on the screen.
+        token = session.get("csrf")
         session.clear()
+        if token:
+            session["csrf"] = token
         return redirect(url_for("web.login"))
     return None
+
+
+def form_page():
+    """Where to send a refused form: the page it was posted to when that page can be
+    shown, else the page it came from on this site, else the home page."""
+    if request.url_rule and "GET" in request.url_rule.methods:
+        return request.path
+    came_from = urlparse(request.referrer or "")
+    if came_from.netloc == request.host and came_from.path.startswith("/"):
+        return came_from.path
+    return url_for("web.home")
+
+
+@bp.app_template_filter("when")
+def when(value):
+    """A stored UTC time, marked so the page script shows it in the viewer's time zone.
+    Without the script it reads as UTC; UTC also stays in the tooltip."""
+    if not value:
+        return ""
+    try:
+        moment = datetime.fromisoformat(str(value))
+    except ValueError:
+        return escape(value)
+    if moment.tzinfo:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    utc = moment.strftime("%Y-%m-%d %H:%M:%S")
+    return Markup(f'<time datetime="{moment:%Y-%m-%dT%H:%M:%S}Z" title="{utc} UTC">{utc} UTC</time>')
 
 
 @bp.app_template_filter("highlight")

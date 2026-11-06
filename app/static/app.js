@@ -6,6 +6,23 @@ document.querySelectorAll(".toast").forEach(t => {
   if (!t.classList.contains("error")) setTimeout(() => t.remove(), 4500);
 });
 
+// Times are stored in UTC; show them in the viewer's own time zone (UTC stays in the tooltip).
+const pad = n => String(n).padStart(2, "0");
+const localTime = iso => {
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(d)
+    .find(p => p.type === "timeZoneName")?.value || "";
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+    + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${zone}`.trim();
+};
+const localTimes = text => text.replace(/(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)( UTC)?/g,
+  (m, day, time) => localTime(`${day}T${time}Z`) || m);
+document.querySelectorAll("time[datetime]").forEach(t => {
+  const shown = localTime(t.getAttribute("datetime"));
+  if (shown) t.textContent = shown;
+});
+
 // Whole table rows open their record.
 document.querySelectorAll("tr[data-href]").forEach(tr =>
   tr.addEventListener("click", e => { if (!e.target.closest("a, button, form")) location = tr.dataset.href; }));
@@ -152,7 +169,7 @@ if (palette) {
         text.className = "p-text";
         const title = marked(item.title, data.terms);
         title.className = "p-title";
-        const sub = marked(item.sub || "", data.terms);
+        const sub = marked(localTimes(item.sub || ""), data.terms);
         sub.className = "p-sub";
         text.append(title, sub);
         a.append(text);

@@ -26,14 +26,14 @@
 <div class="card table-card">
 {% if rows %}
   <table class="data">
-    <thead><tr><th>Email</th><th>Received (UTC)</th><th>Files</th><th>State</th><th>In Odoo</th></tr></thead>
+    <thead><tr><th>Email</th><th>Received</th><th>Files</th><th>State</th><th>In Odoo</th></tr></thead>
     <tbody>
     {% for m in rows %}
     {% set href = url_for('web.message', message_id=m.id) %}
     <tr data-href="{{ href }}">
       <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ (m.subject or "No subject")|highlight(search_terms) }}</a>
           <span class="sub">{{ m.sender|highlight(search_terms) }}, in {{ m.mailbox_name }}</span></td>
-      <td data-label="Received (UTC)"><span class="num">{{ m.received or "" }}</span></td>
+      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
       <td data-label="Files"><span class="num">{{ m.files }}</span></td>
       <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span>
         {% if m.note %}<span class="sub note-line" title="{{ m.note }}">{{ m.note }}</span>{% endif %}</td>

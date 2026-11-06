@@ -8,7 +8,7 @@
   "subject-formats": "How booking and invoice numbers are read from email subject lines.",
 }[key] %}
 {% set status_labels = {"new": "Never read", "running": "Reading now", "success": "Read", "partial": "Partly read", "error": "Failed"} %}
-{% set headings = {"partner_name": "Odoo partner", "status": "Last read", "last_sync": "Read at (UTC)"} %}
+{% set headings = {"partner_name": "Odoo partner", "status": "Last read", "last_sync": "Read at"} %}
 
 <div class="page-head">
   <div><h1>{{ form.title }}</h1><p>{{ intro }}</p></div>
@@ -37,7 +37,7 @@
         {%- elif column == "purpose" -%}{{ {"freight_booking": "Freight Booking", "bill_matching": "Bill Matching", "customs_entry": "Customs Entry Summaries"}.get(value, value) }}
         {%- elif column in ("role", "freight_mode") -%}{{ (value or "")|capitalize }}
         {%- elif column == "subject_pattern" -%}<code class="clip">{{ value }}</code>
-        {%- elif column == "last_sync" -%}<span class="num">{{ value or "" }}</span>
+        {%- elif column == "last_sync" -%}<span class="num">{{ value|when }}</span>
         {%- else -%}{{ value if value is not none else "" }}{%- endif -%}
       </td>
       {% endif %}

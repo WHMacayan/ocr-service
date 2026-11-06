@@ -21,7 +21,7 @@
 <div class="card">
   <dl class="facts" style="margin:0">
     <div><dt>From</dt><dd>{{ message.sender }}</dd></div>
-    <div><dt>Received (UTC)</dt><dd>{{ message.received or "Unknown" }}</dd></div>
+    <div><dt>Received</dt><dd>{{ message.received|when or "Unknown" }}</dd></div>
     <div><dt>Mailbox</dt><dd>{{ message.mailbox_name }}</dd></div>
     <div><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
   </dl>
@@ -62,7 +62,7 @@
   </div>
   {% if changes %}
   <table class="data">
-    <thead><tr><th>Odoo record</th><th>Change</th><th>From</th><th>When (UTC)</th></tr></thead>
+    <thead><tr><th>Odoo record</th><th>Change</th><th>From</th><th>When</th></tr></thead>
     <tbody>
     {% for c in changes %}
     <tr>
@@ -74,7 +74,7 @@
       </td>
       <td data-label="Change"><span class="badge {{ 'ok' if c.action == 'created' else ('failed' if c.action == 'deleted' else '') }} change-action">{{ c.action }}</span></td>
       <td data-label="From">{{ c.filename or "Email text" }}</td>
-      <td data-label="When (UTC)"><span class="num">{{ c.at }}</span></td>
+      <td data-label="When"><span class="num">{{ c.at|when }}</span></td>
     </tr>
     {% endfor %}
     </tbody>
