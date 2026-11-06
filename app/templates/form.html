@@ -3,27 +3,39 @@
 {% macro tip(f) %}{% if f.tip %}<span class="tip">
   <button type="button" class="tip-btn" aria-label="What is {{ f.label }} for?" aria-describedby="tip-{{ f.name }}">{{ icon("info") }}</button>
   <span class="tip-text" role="tooltip" id="tip-{{ f.name }}">{{ f.tip }}</span></span>{% endif %}{% endmacro %}
+{% set split = key is defined and key %}
 {% block content %}
 {% set is_new = form is defined and not record_id %}
 {% set status_labels = {"new": "Never read", "running": "Reading now", "success": "Read", "partial": "Partly read", "error": "Failed"} %}
 
-<div class="page-head">
-  <div>
-    {% if key %}
-    <div class="crumbs"><a href="{{ url_for('web.records', key=key) }}">{{ form.title }}</a>{{ icon("chevron") }}
-      <span>{{ "New" if is_new else "Edit" }}</span></div>
-    <h1>{{ record.name or record.partner_name or ("New " ~ form.singular if is_new else form.singular|capitalize) }}</h1>
-    {% else %}
-    <h1>{{ title }}</h1>
-    <p>The connections and limits the service works with. Changes apply on the worker's next check.</p>
-    {% endif %}
+{% if key %}
+<div class="split has-detail">
+  {% include "_record_list.html" %}
+  <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
+  <div class="detail">
+    <a class="back-link" href="{{ url_for('web.records', key=key) }}">{{ icon("back") }} {{ form.title }}</a>
+    <header class="detail-head">
+      <div class="detail-meta">{{ form.title }} · {{ "New" if is_new else "Edit" }}</div>
+      <div class="detail-title"><h2 id="detail-title" tabindex="-1">{{ record.name or record.partner_name or ("New " ~ form.singular if is_new else form.singular|capitalize) }}</h2></div>
+    </header>
+{% else %}
+<div class="page">
+  <div class="page-head">
+    <div><h1>{{ title }}</h1>
+      <p>The connections and limits the service works with. Changes apply on the worker's next check.</p></div>
   </div>
-</div>
+  <div class="settings-grid">
+    <nav class="section-nav" aria-label="Settings sections">
+      <a href="#odoo-connections">Odoo connections</a>
+      {% for title_, description, fields in sections %}<a href="#section-{{ loop.index }}">{{ title_ }}</a>{% endfor %}
+    </nav>
+    <div class="settings-body">
+{% endif %}
 
 {% if extra == "mailbox" and record_id %}
 {% set connected = record.refresh_token %}
 <div class="card">
-  <dl class="facts" style="margin:0">
+  <dl class="facts" id="mailbox-status" data-live style="margin:0">
     <div><dt>Outlook</dt><dd><span class="badge {{ 'ok' if connected else 'error' }}">{{ "Connected" if connected else "Not connected" }}</span></dd></div>
     <div><dt>Last read</dt><dd><span class="badge {{ record.status }}">{{ status_labels.get(record.status, record.status) }}</span>
       {% if record.last_sync %}<span class="muted">{{ record.last_sync|when }}</span>{% endif %}</dd></div>
@@ -33,7 +45,7 @@
     {% if record.last_error %}<div class="callout bad" style="margin-bottom:16px">{{ icon("alert") }}<span>{{ record.last_error }}</span></div>{% endif %}
     {% if record.group_miss_note %}<div class="callout warn" style="margin-bottom:16px">{{ icon("alert") }}<span>{{ record.group_miss_note }}</span></div>{% endif %}
     <div class="actions">
-      <form method="post" action="{{ url_for('web.connect_outlook', mailbox_id=record_id) }}">
+      <form method="post" action="{{ url_for('web.connect_outlook', mailbox_id=record_id) }}" data-full>
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="btn {{ 'secondary' if connected else '' }}">{{ icon("plug") }} {{ "Reconnect Outlook" if connected else "Connect Outlook" }}</button>
       </form>
@@ -49,11 +61,10 @@
     </div>
   </div>
 </div>
-<div style="height:20px"></div>
 {% endif %}
 
 {% if extra == "settings" %}
-<section class="card table-card">
+<section class="card table-card" id="odoo-connections">
   <div class="card-head">
     <div><h2>Odoo connections</h2>
       <p>Where the suggestions are written. Every connection that is on gets the same bookings, bills and customs
@@ -96,13 +107,12 @@
     the emails are read and saved, but nothing is written to Odoo.</div>
   {% endif %}
 </section>
-<div style="height:20px"></div>
 {% endif %}
 
 <form method="post" action="{{ action }}" id="record-form" novalidate>
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {% for title_, description, fields in sections %}
-  <section class="card">
+  <section class="card" id="section-{{ loop.index }}">
     <div class="card-head"><div><h2>{{ title_ }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}</div></div>
     <div class="card-body">
       <div class="form-grid">
@@ -199,7 +209,7 @@
 </form>
 
 {% if extra == "mailbox" and record_id %}
-<div class="card" style="margin-top:20px">
+<div class="card">
   <div class="card-body danger-card">
     <div><h2>Clear and start over</h2>
       <p>Removes this mailbox's fetched emails, saved files and run history, and forgets where reading stopped.
@@ -213,7 +223,7 @@
 </div>
 {% endif %}
 {% if key and record_id %}
-<div class="card" style="margin-top:20px">
+<div class="card">
   <div class="card-body danger-card">
     <div><h2>Delete {{ form.singular }}</h2>
       <p>{% if extra == "mailbox" %}A mailbox that has emails can't be deleted. Clear it first, or switch off Active instead.{% else %}This can't be undone.{% endif %}</p></div>
@@ -224,5 +234,14 @@
   </div>
 </div>
 {% endif %}
-{% endblock %}
 
+{% if key %}
+  </div>
+  </section>
+</div>
+{% else %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

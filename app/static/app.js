@@ -1,16 +1,23 @@
 // OCR Service: every page's behaviour. Pages run no inline script (see the Content-Security-Policy).
+//
+// Pages open without a full reload: links and forms inside the app are fetched and only the page
+// area is swapped; a list beside an open record stays where it was. Parts marked data-live are
+// refreshed every few seconds while the tab is visible. Without this script every page still works.
 
-// Success notices leave on their own; errors stay until dismissed.
-document.querySelectorAll(".toast").forEach(t => {
-  t.querySelector("[data-dismiss]").addEventListener("click", () => t.remove());
-  if (!t.classList.contains("error")) setTimeout(() => t.remove(), 4500);
-});
+const $$ = (root, selector) => [...(root.matches?.(selector) ? [root] : []), ...root.querySelectorAll(selector)];
 
-// Times are stored in UTC; show them in the viewer's own time zone (UTC stays in the tooltip).
+// ── times: stored in UTC, shown in the viewer's time zone (UTC stays in the tooltip) ──────────
+
 const pad = n => String(n).padStart(2, "0");
-const localTime = iso => {
+const localTime = (iso, short = false) => {
   const d = new Date(iso);
   if (isNaN(d)) return null;
+  if (short) {
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
   const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(d)
     .find(p => p.type === "timeZoneName")?.value || "";
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
@@ -18,92 +25,437 @@ const localTime = iso => {
 };
 const localTimes = text => text.replace(/(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)( UTC)?/g,
   (m, day, time) => localTime(`${day}T${time}Z`) || m);
-document.querySelectorAll("time[datetime]").forEach(t => {
-  const shown = localTime(t.getAttribute("datetime"));
-  if (shown) t.textContent = shown;
-});
 
-// Whole table rows open their record.
-document.querySelectorAll("tr[data-href]").forEach(tr =>
-  tr.addEventListener("click", e => { if (!e.target.closest("a, button, form")) location = tr.dataset.href; }));
+// ── behaviours of one page area: run on load, and on every area swapped in ─────────────────────
 
-// Forms that ask before they act, such as Delete.
-document.querySelectorAll("form[data-confirm]").forEach(f =>
-  f.addEventListener("submit", e => { if (!confirm(f.dataset.confirm)) e.preventDefault(); }));
+const served = new WeakMap();  // live area -> the HTML the server sent, to tell when it changed
+let leaveGuard = null;         // a record form with unsaved changes
 
-// Phone menu.
-const menuBtn = document.querySelector("[data-menu]");
-const setMenu = open => {
-  document.body.classList.toggle("menu-open", open);
-  if (menuBtn) menuBtn.setAttribute("aria-expanded", open);
-};
-if (menuBtn) menuBtn.addEventListener("click", () => setMenu(!document.body.classList.contains("menu-open")));
-document.querySelector("[data-menu-close]")?.addEventListener("click", () => setMenu(false));
-document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
-
-// Record forms: the save bar shows once something changed; leaving asks first.
-const form = document.getElementById("record-form");
-if (form) {
-  const bar = document.getElementById("savebar");
-  let dirty = false, submitting = false;
-  const markDirty = () => { dirty = true; bar.classList.add("show"); };
-  form.addEventListener("input", markDirty);
-  form.addEventListener("change", markDirty);
-  form.addEventListener("submit", () => { submitting = true; });
-  window.addEventListener("beforeunload", e => { if (dirty && !submitting) { e.preventDefault(); e.returnValue = ""; } });
-  document.querySelector("[data-discard]")?.addEventListener("click", () => { dirty = false; location.reload(); });
+function initToast(t) {
+  t.querySelector("[data-dismiss]")?.addEventListener("click", () => t.remove());
+  if (!t.classList.contains("error")) setTimeout(() => { t.classList.add("leaving"); setTimeout(() => t.remove(), 220); }, 4500);
 }
 
-// Saved secrets: Replace opens an empty field; Cancel closes it again (empty means keep).
-document.querySelectorAll("[data-replace]").forEach(b => b.addEventListener("click", () => {
-  const name = b.dataset.replace;
-  document.querySelector(`[data-saved="${name}"]`).hidden = true;
-  document.querySelector(`[data-input="${name}"]`).hidden = false;
-  document.getElementById(name).focus();
-}));
-document.querySelectorAll("[data-keep]").forEach(b => b.addEventListener("click", () => {
-  const name = b.dataset.keep;
-  document.getElementById(name).value = "";
-  document.querySelector(`[data-input="${name}"]`).hidden = true;
-  document.querySelector(`[data-saved="${name}"]`).hidden = false;
-}));
-document.querySelectorAll("[data-reveal]").forEach(b => b.addEventListener("click", () => {
-  const input = document.getElementById(b.dataset.reveal);
-  input.type = input.type === "password" ? "text" : "password";
-  b.textContent = input.type === "password" ? "Show" : "Hide";
+function init(root) {
+  $$(root, "[data-live][id]").forEach(el => served.set(el, el.outerHTML));
+  $$(root, "time[datetime]").forEach(t => {
+    const shown = localTime(t.getAttribute("datetime"), t.hasAttribute("data-short"));
+    if (shown) t.textContent = shown;
+  });
+  $$(root, ".toast").forEach(initToast);
+
+  // Forms that ask before they act, such as Delete.
+  $$(root, "form[data-confirm]").forEach(f =>
+    f.addEventListener("submit", e => { if (!confirm(f.dataset.confirm)) e.preventDefault(); }));
+
+  // Record forms: the save bar shows once something changed; leaving asks first.
+  $$(root, "#record-form").forEach(form => {
+    const bar = document.getElementById("savebar");
+    let dirty = false, submitting = false;
+    const markDirty = () => { dirty = true; bar?.classList.add("show"); };
+    form.addEventListener("input", markDirty);
+    form.addEventListener("change", markDirty);
+    form.addEventListener("submit", () => { submitting = true; });
+    leaveGuard = () => dirty && !submitting && document.contains(form);
+    form.querySelector("[data-discard]")?.addEventListener("click", () => { dirty = false; visit(location.href, { push: false }); });
+  });
+
+  // Saved secrets: Replace opens an empty field; Cancel closes it again (empty means keep).
+  $$(root, "[data-replace]").forEach(b => b.addEventListener("click", () => {
+    const name = b.dataset.replace;
+    document.querySelector(`[data-saved="${name}"]`).hidden = true;
+    document.querySelector(`[data-input="${name}"]`).hidden = false;
+    document.getElementById(name).focus();
+  }));
+  $$(root, "[data-keep]").forEach(b => b.addEventListener("click", () => {
+    const name = b.dataset.keep;
+    document.getElementById(name).value = "";
+    document.querySelector(`[data-input="${name}"]`).hidden = true;
+    document.querySelector(`[data-saved="${name}"]`).hidden = false;
+  }));
+  $$(root, "[data-reveal]").forEach(b => b.addEventListener("click", () => {
+    const input = document.getElementById(b.dataset.reveal);
+    input.type = input.type === "password" ? "text" : "password";
+    b.textContent = input.type === "password" ? "Show" : "Hide";
+  }));
+
+  // Searchable Odoo lists: the visible box searches by name, the hidden field carries the Odoo ID.
+  $$(root, "[data-combo]").forEach(box => {
+    const name = box.dataset.combo;
+    const hidden = document.getElementById(name);
+    const miss = document.querySelector(`[data-combo-miss="${name}"]`);
+    const ids = new Map([...document.getElementById(`${name}-list`).options].map(o => [o.value, o.dataset.id]));
+    const sync = () => {
+      hidden.value = ids.get(box.value) || "";
+      const unmatched = box.value.trim() !== "" && !hidden.value;
+      box.classList.toggle("invalid", unmatched);
+      miss.hidden = !unmatched;
+    };
+    box.addEventListener("input", sync);
+    box.addEventListener("change", sync);
+  });
+
+  // Tooltips open on hover and keyboard focus (CSS); a tap toggles them on touch screens.
+  $$(root, ".tip-btn").forEach(b => b.addEventListener("click", e => {
+    e.preventDefault();
+    const tip = b.closest(".tip");
+    const open = !tip.classList.contains("open");
+    document.querySelectorAll(".tip.open").forEach(t => t.classList.remove("open"));
+    tip.classList.toggle("open", open);
+  }));
+
+  // Instant filter on short lists.
+  $$(root, "[data-filter]").forEach(box => {
+    box.addEventListener("input", () => {
+      const rows = [...document.querySelectorAll(`${box.dataset.filter} > *, ${box.dataset.filter} tbody tr`)];
+      const empty = document.querySelector("[data-filter-empty]");
+      const words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      rows.forEach(row => {
+        const hit = words.every(w => row.textContent.toLowerCase().includes(w));
+        row.hidden = !hit;
+        shown += hit;
+      });
+      if (empty) empty.hidden = shown > 0;
+    });
+  });
+
+  $$(root, "[data-copy]").forEach(b => b.addEventListener("click", async () => {
+    const label = b.innerHTML;
+    try { await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent); b.textContent = "Copied"; }
+    catch { b.textContent = "Select and copy"; }
+    setTimeout(() => { b.innerHTML = label; }, 2000);
+  }));
+
+  // Long lists: the next page loads as the end comes into view.
+  $$(root, "[data-more]").forEach(more => {
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) { io.disconnect(); loadMore(more); }
+    }, { root: more.closest(".pane"), rootMargin: "600px" });
+    io.observe(more);
+  });
+
+  // Settings: the section menu follows the scroll.
+  $$(root, ".section-nav").forEach(nav => {
+    const links = new Map([...nav.querySelectorAll("a")].map(a => [a.hash.slice(1), a]));
+    const io = new IntersectionObserver(entries => entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      links.forEach(a => a.classList.remove("on"));
+      links.get(e.target.id)?.classList.add("on");
+    }), { rootMargin: "-20% 0px -70% 0px" });
+    links.forEach((_a, id) => { const section = document.getElementById(id); if (section) io.observe(section); });
+  });
+}
+
+async function loadMore(more) {
+  const list = more.parentElement;
+  try {
+    const page = await load(more.dataset.more);
+    const fresh = page.html && new DOMParser().parseFromString(page.html, "text/html").getElementById(list.id);
+    if (!fresh) throw new Error("no list");
+    const items = [...fresh.children].filter(li => !li.classList.contains("list-empty"));
+    more.replaceWith(...items);
+    items.forEach(init);
+    list.dataset.pages = Number(list.dataset.pages || 1) + 1;
+  } catch {
+    more.querySelector("a")?.removeAttribute("hidden");
+  }
+}
+
+// ── soft navigation ───────────────────────────────────────────────────────────────────────────
+
+const progress = document.getElementById("progress");
+let progressTimer = null;
+const startProgress = () => {
+  clearTimeout(progressTimer);
+  progress?.classList.remove("done");
+  progressTimer = setTimeout(() => progress?.classList.add("on"), 120);
+};
+const endProgress = () => {
+  clearTimeout(progressTimer);
+  if (!progress?.classList.contains("on")) return;
+  progress.classList.replace("on", "done");
+  setTimeout(() => progress.classList.remove("done"), 500);
+};
+
+const load = (url, options = {}) => fetch(url, { credentials: "same-origin", ...options }).then(async r => ({
+  url: r.url, status: r.status,
+  html: (r.headers.get("content-type") || "").includes("text/html") ? await r.text() : null,
 }));
 
-// Searchable Odoo lists: the visible box searches by name, the hidden field carries the Odoo ID.
-document.querySelectorAll("[data-combo]").forEach(box => {
-  const name = box.dataset.combo;
-  const hidden = document.getElementById(name);
-  const miss = document.querySelector(`[data-combo-miss="${name}"]`);
-  const ids = new Map([...document.getElementById(`${name}-list`).options].map(o => [o.value, o.dataset.id]));
-  const sync = () => {
-    hidden.value = ids.get(box.value) || "";
-    const unmatched = box.value.trim() !== "" && !hidden.value;
-    box.classList.toggle("invalid", unmatched);
-    miss.hidden = !unmatched;
-  };
-  box.addEventListener("input", sync);
-  box.addEventListener("change", sync);
+const prefetched = new Map();  // url -> {at, page promise}; links in lists are fetched on hover
+const takePrefetched = url => {
+  const hit = prefetched.get(url);
+  prefetched.delete(url);
+  return hit && Date.now() - hit.at < 10000 ? hit.page : null;
+};
+
+let visitId = 0;
+async function visit(url, { method = "GET", body = null, push = true } = {}) {
+  if (leaveGuard?.() && !confirm("Leave without saving your changes?")) return;
+  const id = ++visitId;
+  document.body.classList.remove("menu-open");
+  startProgress();
+  let page;
+  try {
+    page = await ((method === "GET" && takePrefetched(url)) || load(url, { method, body }));
+  } catch {
+    endProgress();
+    if (method === "GET") location.href = url;
+    else showError("The service did not answer. Check your connection and try again.");
+    return;
+  }
+  if (id !== visitId) return;
+  endProgress();
+  if (method !== "GET") prefetched.clear();
+  const doc = page.html && new DOMParser().parseFromString(page.html, "text/html");
+  if (!doc?.getElementById("main") || new URL(page.url).origin !== location.origin) {
+    // Not an app page (signed out, or an error): load it the ordinary way.
+    if (method === "GET" || page.status < 400) location.href = page.url;
+    else showError(`Something went wrong (error ${page.status}). Reload the page and try again.`);
+    return;
+  }
+  apply(doc, page.url, { push: push && page.url !== location.href, method });
+}
+
+function showError(text) {
+  const toast = document.createElement("div");
+  toast.className = "toast error";
+  toast.setAttribute("role", "alert");
+  toast.innerHTML = '<span class="t-icon"></span><span></span><button type="button" aria-label="Dismiss" data-dismiss>×</button>';
+  toast.children[1].textContent = text;
+  document.getElementById("toasts").append(toast);
+  initToast(toast);
+}
+
+function apply(doc, url, { push, method }) {
+  const main = document.getElementById("main");
+  const next = doc.getElementById("main");
+  document.title = doc.title;
+  const rail = document.getElementById("rail");
+  const nextRail = doc.getElementById("rail");
+  if (rail && nextRail) { rail.replaceWith(nextRail); syncTheme(); }
+
+  // Typing in a list's search box: keep the caret there when the list comes back.
+  const active = document.activeElement;
+  const typing = active?.closest?.("[role=search]") && active.name ? { name: active.name, at: active.selectionStart } : null;
+
+  const list = main.querySelector("[data-list-key]");
+  const nextList = next.querySelector("[data-list-key]");
+  const sameList = list && nextList && list.dataset.listKey === nextList.dataset.listKey;
+  const extended = Number(list?.querySelector("[data-pages]")?.dataset.pages || 1) > 1;
+  if (sameList && extended && method === "GET") {
+    // A longer list than the server sends: keep it, move the highlight, swap the rest.
+    const current = nextList.querySelector('[aria-current="true"]')?.getAttribute("href");
+    list.querySelectorAll(".mail-row").forEach(a =>
+      a.getAttribute("href") === current ? a.setAttribute("aria-current", "true") : a.removeAttribute("aria-current"));
+    main.querySelector(".split")?.setAttribute("class", next.querySelector(".split")?.getAttribute("class") || "split");
+    main.querySelector("#detail")?.replaceWith(next.querySelector("#detail"));
+    main.querySelector(".env-bar")?.replaceWith(next.querySelector(".env-bar"));
+  } else {
+    const scroll = sameList ? list.scrollTop : 0;
+    main.className = next.className;
+    main.replaceChildren(...next.childNodes);
+    if (sameList) main.querySelector("[data-list-key]").scrollTop = scroll;
+  }
+  const toasts = document.getElementById("toasts");
+  doc.querySelectorAll("#toasts .toast").forEach(t => { toasts.append(t); initToast(t); });
+
+  if (push) history.pushState({}, "", url);
+  else history.replaceState({}, "", url);
+  init(main);
+
+  if (typing) {
+    const box = main.querySelector(`[role=search] [name="${typing.name}"]`);
+    box?.focus();
+    box?.setSelectionRange?.(typing.at, typing.at);
+  } else if (push || method !== "GET") {
+    const hash = new URL(url).hash;
+    const target = hash && document.getElementById(hash.slice(1));
+    if (target) target.scrollIntoView();
+    else if (!main.classList.contains("is-split")) window.scrollTo(0, 0);
+    if (method === "GET") main.querySelector("#detail-title")?.focus({ preventScroll: true });
+  }
+  main.querySelector(".mail-row[aria-current]")?.scrollIntoView({ block: "nearest" });
+}
+
+const inApp = () => document.getElementById("main");
+const ownPage = url => url.origin === location.origin && !url.pathname.startsWith("/static/") && !url.pathname.startsWith("/oauth");
+
+document.addEventListener("click", e => {
+  if (!inApp() || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const more = e.target.closest("[data-more] a");
+  if (more) { e.preventDefault(); more.hidden = true; loadMore(more.closest("[data-more]")); return; }
+  const row = e.target.closest("tr[data-href]");
+  if (row && !e.target.closest("a, button, form, summary, input")) { visit(new URL(row.dataset.href, location.href).href); return; }
+  const a = e.target.closest("a[href]");
+  if (!a || a.target || a.hasAttribute("download") || a.hasAttribute("data-full")) return;
+  const url = new URL(a.href, location.href);
+  if (!ownPage(url)) return;
+  if (url.hash && url.pathname === location.pathname && url.search === location.search) return;  // in-page anchor
+  e.preventDefault();
+  if (a.closest("#palette")) closePalette();
+  visit(url.href);
 });
 
-// Tooltips open on hover and keyboard focus (CSS); a tap toggles them on touch screens.
-document.querySelectorAll(".tip-btn").forEach(b => b.addEventListener("click", e => {
+document.addEventListener("submit", e => {
+  const form = e.target;
+  if (!inApp() || e.defaultPrevented || form.hasAttribute("data-full") || form.target) return;
+  const method = (form.getAttribute("method") || "get").toUpperCase();
+  const action = new URL(form.getAttribute("action") || location.href, location.href);
+  if (!ownPage(action)) return;
   e.preventDefault();
-  const tip = b.closest(".tip");
-  const open = !tip.classList.contains("open");
-  document.querySelectorAll(".tip.open").forEach(t => t.classList.remove("open"));
-  tip.classList.toggle("open", open);
-}));
+  let data;
+  try { data = new FormData(form, e.submitter); } catch { data = new FormData(form); }
+  if (form.closest("#palette")) closePalette();
+  if (method === "GET") {
+    action.search = new URLSearchParams(data).toString();
+    visit(action.href);
+  } else {
+    e.submitter?.setAttribute("aria-busy", "true");
+    visit(action.href, { method, body: data });
+  }
+});
+
+window.addEventListener("popstate", () => { if (inApp()) visit(location.href, { push: false }); });
+window.addEventListener("beforeunload", e => { if (leaveGuard?.()) { e.preventDefault(); e.returnValue = ""; } });
+
+// Hovering a row in a list fetches its page, so the click opens it at once.
+let hoverTimer = null;
+document.addEventListener("pointerover", e => {
+  const a = e.target.closest?.("[data-prefetch] a[href]");
+  if (!a || a.hasAttribute("data-full")) return;
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => {
+    const url = new URL(a.href, location.href).href;
+    if (!prefetched.has(url)) prefetched.set(url, { at: Date.now(), page: load(url) });
+  }, 70);
+});
+
+// The email search box searches as you type.
+let typingTimer = null;
+document.addEventListener("input", e => {
+  const box = e.target.closest?.(".pane-list form[role=search] input[type=search]");
+  if (!box) return;
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => box.form.requestSubmit(), 350);
+});
+
+// ── live areas ────────────────────────────────────────────────────────────────────────────────
+
+let polling = false;
+async function poll() {
+  if (polling || document.hidden || !inApp() || !document.querySelector("[data-live][id]")) return;
+  polling = true;
+  const here = location.href, visiting = visitId;
+  try {
+    const page = await load(here, { headers: { "X-Live": "1" } });
+    if (location.href !== here || visitId !== visiting) return;  // moved on meanwhile: this answer is stale
+    const doc = page.html && page.url === here.split("#")[0] && new DOMParser().parseFromString(page.html, "text/html");
+    document.querySelectorAll(".live-pill").forEach(p => p.classList.toggle("paused", !doc));
+    if (!doc) return;
+    doc.querySelectorAll("[data-live][id]").forEach(fresh => {
+      const old = document.getElementById(fresh.id);
+      if (!old || served.get(old) === fresh.outerHTML) return;
+      const focus = document.activeElement;
+      if (old.contains(focus) && focus.matches("input, select, textarea")) return;
+      if (Number(old.dataset.pages || 1) > 1) { mergeList(old, fresh); return; }
+      const seen = new Set([...old.querySelectorAll("[data-key]")].map(el => el.dataset.key));
+      const open = new Set([...old.querySelectorAll("details[id]")].filter(d => d.open).map(d => d.id));
+      const shut = new Set([...old.querySelectorAll("details[id]")].filter(d => !d.open).map(d => d.id));
+      old.replaceWith(fresh);
+      init(fresh);
+      fresh.querySelectorAll("details[id]").forEach(d => {
+        if (open.has(d.id)) d.open = true;
+        if (shut.has(d.id)) d.open = false;
+      });
+      if (seen.size) fresh.querySelectorAll("[data-key]").forEach(el => { if (!seen.has(el.dataset.key)) el.classList.add("fresh"); });
+    });
+  } catch {
+    document.querySelectorAll(".live-pill").forEach(p => p.classList.add("paused"));
+  } finally {
+    polling = false;
+  }
+}
+
+// A list with more pages loaded than the server sends: update its rows in place, add new ones on top.
+function mergeList(old, fresh) {
+  const first = old.querySelector(":scope > [data-key]");
+  fresh.querySelectorAll(":scope > [data-key]").forEach(item => {
+    const existing = old.querySelector(`:scope > [data-key="${item.dataset.key}"]`);
+    if (existing) {
+      if (existing.innerHTML !== item.innerHTML) { existing.replaceWith(item); init(item); }
+    } else {
+      old.insertBefore(item, first);
+      init(item);
+      item.classList.add("fresh");
+    }
+  });
+}
+
+setInterval(poll, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+// ── keyboard: move through a list ─────────────────────────────────────────────────────────────
+
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || !inApp() || !document.getElementById("palette")?.hidden) return;
+  if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+  const list = document.querySelector(".pane-list .mail-list");
+  if (!list) return;
+  const down = e.key === "j" || e.key === "ArrowDown", up = e.key === "k" || e.key === "ArrowUp";
+  if (!down && !up) return;
+  // Arrow keys still scroll the open record when it has focus.
+  if (e.key.startsWith("Arrow") && e.target.closest?.(".pane-detail")) return;
+  const rows = [...list.querySelectorAll(".mail-row")];
+  if (!rows.length) return;
+  e.preventDefault();
+  const at = rows.findIndex(r => r.getAttribute("aria-current") === "true");
+  const target = rows[Math.min(Math.max(at + (down ? 1 : -1), 0), rows.length - 1)] || rows[0];
+  if (target.getAttribute("aria-current") === "true") return;
+  rows.forEach(r => r.removeAttribute("aria-current"));
+  target.setAttribute("aria-current", "true");
+  target.scrollIntoView({ block: "nearest" });
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => visit(target.href), 120);
+});
+
+// ── menu, theme ───────────────────────────────────────────────────────────────────────────────
+
+const setMenu = open => {
+  document.body.classList.toggle("menu-open", open);
+  document.querySelector("[data-menu]")?.setAttribute("aria-expanded", open);
+};
+const THEMES = { system: "Theme: match Windows", light: "Theme: light", dark: "Theme: dark" };
+const currentTheme = () => document.documentElement.dataset.theme || "system";
+function syncTheme() {
+  const theme = currentTheme();
+  document.querySelectorAll("[data-theme-icon]").forEach(i => { i.hidden = i.dataset.themeIcon !== theme; });
+  document.querySelectorAll("[data-theme-label]").forEach(l => { l.textContent = THEMES[theme]; });
+}
 document.addEventListener("click", e => {
+  if (e.target.closest("[data-menu]")) setMenu(!document.body.classList.contains("menu-open"));
+  else if (e.target.closest("[data-menu-close]")) setMenu(false);
+  if (e.target.closest("[data-theme-toggle]")) {
+    const order = Object.keys(THEMES);
+    const next = order[(order.indexOf(currentTheme()) + 1) % order.length];
+    if (next === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = next;
+    try {
+      if (next === "system") localStorage.removeItem("theme");
+      else localStorage.setItem("theme", next);
+    } catch { /* storage blocked: the choice lasts until the page closes */ }
+    syncTheme();
+  }
+  if (e.target.closest("[data-search-open]")) openPalette();
   if (!e.target.closest(".tip")) document.querySelectorAll(".tip.open").forEach(t => t.classList.remove("open"));
 });
+document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
 
-// ── Search everything: Ctrl+K or / opens it; results arrive as you type ──────────
+// ── search everything: Ctrl+K or / opens it; results arrive as you type ───────────────────────
 
 const palette = document.getElementById("palette");
+let openPalette = () => {}, closePalette = () => {};
 if (palette) {
   const input = document.getElementById("palette-q");
   const list = document.getElementById("palette-results");
@@ -204,58 +556,38 @@ if (palette) {
       .catch(e => { if (e.name !== "AbortError") hint("Search is not available right now. Press Enter for the full search."); });
   };
 
-  const open = () => {
+  openPalette = () => {
     lastFocus = document.activeElement;
+    setMenu(false);
     palette.hidden = false;
     document.body.classList.add("palette-open");
     input.focus();
     input.select();
     run();
   };
-  const close = () => {
+  closePalette = () => {
     palette.hidden = true;
     document.body.classList.remove("palette-open");
     lastFocus?.focus?.();
   };
 
-  document.querySelectorAll("[data-search-open]").forEach(b => b.addEventListener("click", open));
-  palette.addEventListener("mousedown", e => { if (e.target === palette) close(); });
+  palette.addEventListener("mousedown", e => { if (e.target === palette) closePalette(); });
   input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 150); });
   input.addEventListener("keydown", e => {
     if (e.key === "ArrowDown") { e.preventDefault(); select(active + 1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); select(active - 1); }
     else if (e.key === "Enter" && active >= 0) { e.preventDefault(); options()[active].click(); }
-    else if (e.key === "Escape") { e.preventDefault(); close(); }
+    else if (e.key === "Escape") { e.preventDefault(); closePalette(); }
   });
   document.addEventListener("keydown", e => {
     const typing = e.target.closest?.("input, textarea, select, [contenteditable]");
     if ((e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey)) || (e.key === "/" && !typing)) {
       e.preventDefault();
-      palette.hidden ? open() : close();
+      if (palette.hidden) openPalette();
+      else closePalette();
     }
   });
 }
 
-// ── Instant filter on list pages ─────────────────────────────────────────────
-
-document.querySelectorAll("[data-filter]").forEach(box => {
-  const rows = [...document.querySelectorAll(`${box.dataset.filter} tbody tr`)];
-  const empty = document.querySelector("[data-filter-empty]");
-  box.addEventListener("input", () => {
-    const words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
-    let shown = 0;
-    rows.forEach(tr => {
-      const hit = words.every(w => tr.textContent.toLowerCase().includes(w));
-      tr.hidden = !hit;
-      shown += hit;
-    });
-    if (empty) empty.hidden = shown > 0;
-  });
-});
-
-document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", async () => {
-  const label = b.innerHTML;
-  try { await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent); b.textContent = "Copied"; }
-  catch { b.textContent = "Select and copy"; }
-  setTimeout(() => { b.innerHTML = label; }, 2000);
-}));
+syncTheme();
+init(document);

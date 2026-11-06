@@ -220,9 +220,10 @@ def form_page():
 
 
 @bp.app_template_filter("when")
-def when(value):
+def when(value, short=False):
     """A stored UTC time, marked so the page script shows it in the viewer's time zone.
-    Without the script it reads as UTC; UTC also stays in the tooltip."""
+    Without the script it reads as UTC; UTC also stays in the tooltip. Short: the time
+    alone today, else the date, for lists."""
     if not value:
         return ""
     try:
@@ -232,7 +233,8 @@ def when(value):
     if moment.tzinfo:
         moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
     utc = moment.strftime("%Y-%m-%d %H:%M:%S")
-    return Markup(f'<time datetime="{moment:%Y-%m-%dT%H:%M:%S}Z" title="{utc} UTC">{utc} UTC</time>')
+    extra = " data-short" if short else ""
+    return Markup(f'<time datetime="{moment:%Y-%m-%dT%H:%M:%S}Z" title="{utc} UTC"{extra}>{utc} UTC</time>')
 
 
 @bp.app_template_filter("highlight")
@@ -789,13 +791,18 @@ def record_label(values, record_id):
     return values.get("name") or values.get("partner_name") or values.get("sender_domain") or f"#{record_id}"
 
 
-@bp.route("/<key>/")
-def records(key):
+@bp.app_template_global()
+def record_list(key):
+    """The rows listed beside a mailbox, vendor mapping or subject format, with their column labels."""
     form = _form(key)
     order = "sequence, id" if form.table == "subject_format" else "id"
     rows = g.db.execute(f"SELECT * FROM {form.table} ORDER BY {order}").fetchall()
-    return render_template("list.html", key=key, form=form, rows=rows,
-                           labels={f.name: f.label for f in form.fields})
+    return {"rows": rows, "labels": {f.name: f.label for f in form.fields}, "form": form}
+
+
+@bp.route("/<key>/")
+def records(key):
+    return render_template("list.html", key=key, form=_form(key))
 
 
 @bp.route("/<key>/new", methods=["GET", "POST"], defaults={"record_id": None})
@@ -973,27 +980,38 @@ def runs(mailbox_id):
     mailbox = store.mailbox(g.db, mailbox_id) or abort(404)
     rows = g.db.execute("SELECT * FROM run WHERE mailbox_id = ? ORDER BY id DESC LIMIT 20",
                         (mailbox_id,)).fetchall()
-    return render_template("runs.html", mailbox=mailbox, runs=rows)
+    return render_template("runs.html", mailbox=mailbox, runs=rows, key="mailboxes", record_id=mailbox_id)
 
 
 # ── emails ───────────────────────────────────────────────────────────
 
-@bp.route("/messages")
-def messages():
+EMAILS_PAGE = 100
+
+
+def email_list():
+    """The email list beside every Emails page: ?state= and ?q= filter it, ?offset= is the next page."""
     state = request.args.get("state")
     q = (request.args.get("q") or "").strip()
+    offset = max(request.args.get("offset", 0, type=int), 0)
     where, args = search.email_where(search.parse(q))
     if state in STATE_LABELS:
         where, args = f"{where} AND m.state = ?", (*args, state)
     rows = g.db.execute(
         "SELECT m.*, b.name AS mailbox_name, (SELECT COUNT(*) FROM file f WHERE f.message_id = m.id) AS files "
         f"FROM message m JOIN mailbox b ON b.id = m.mailbox_id WHERE {where} "
-        "ORDER BY m.received DESC, m.id DESC LIMIT 201", args).fetchall()
+        "ORDER BY m.received DESC, m.id DESC LIMIT ? OFFSET ?", (*args, EMAILS_PAGE + 1, offset)).fetchall()
+    shown = rows[:EMAILS_PAGE]
     counts = dict(g.db.execute("SELECT state, COUNT(*) FROM message GROUP BY state").fetchall())
+    return {"rows": shown, "more": offset + EMAILS_PAGE if len(rows) > EMAILS_PAGE else None, "offset": offset,
+            "state": state if state in STATE_LABELS else None, "q": q, "counts": counts, "total": sum(counts.values()),
+            "route": ROUTE, "off_route": OFF_ROUTE, "in_odoo": odoo_records([r["id"] for r in shown]),
+            "filters": {"state": state if state in STATE_LABELS else None, "q": q or None}}
+
+
+@bp.route("/messages")
+def messages():
     mailboxes = g.db.execute("SELECT COUNT(*) FROM mailbox").fetchone()[0]
-    return render_template("messages.html", rows=rows[:200], more=len(rows) > 200, state=state, q=q, counts=counts,
-                           route=ROUTE, off_route=OFF_ROUTE, total=sum(counts.values()), mailboxes=mailboxes,
-                           in_odoo=odoo_records([r["id"] for r in rows[:200]]))
+    return render_template("messages.html", mailboxes=mailboxes, **email_list())
 
 
 # The Odoo records an email is shown with; changes to their lines (containers, conflicts…) are in its detail.
@@ -1221,7 +1239,8 @@ def message(message_id):
         f"AND ? != 'skipped') ORDER BY {store.CONNECTION_ORDER}",
         (message_id, row["received"], row["state"])).fetchall()
     return render_template("message.html", message=row, files=files, changes=changes, model_names=MODEL_NAMES,
-                           in_odoo=odoo_records([message_id]).get(message_id), targets=targets)
+                           written=odoo_records([message_id]).get(message_id), targets=targets,
+                           current_id=message_id, **email_list())
 
 
 @bp.route("/messages/<int:message_id>/retry", methods=["POST"])
@@ -1244,4 +1263,5 @@ def retry(message_id):
         g.db.execute("UPDATE file SET state = 'new', note = NULL WHERE message_id = ?", (message_id,))
         store.refresh_messages(g.db, [message_id])
     flash("Queued again. It is processed on the worker's next check.")
-    return redirect(url_for("web.message", message_id=message_id))
+    keep = {k: request.args[k] for k in ("state", "q") if request.args.get(k)}
+    return redirect(url_for("web.message", message_id=message_id, **keep))

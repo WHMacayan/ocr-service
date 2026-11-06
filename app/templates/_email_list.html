@@ -1,0 +1,60 @@
+{% from "_icons.html" import icon %}
+{% set search_terms = q and q.split() or [] %}
+{# The list beside every Emails page. Kept in place when an email opens beside it (data-list-key). #}
+<section class="pane pane-list" aria-label="Email list" data-list-key="emails {{ state or '' }} {{ q }}">
+  <div class="pane-head">
+    <div class="pane-title">
+      <h1>Emails</h1>
+      <span class="live-pill" title="This list updates by itself as the worker reads mail"><span></span>Live</span>
+    </div>
+    <form class="search" method="get" action="{{ url_for('web.messages') }}" role="search">
+      {% if state %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
+      {{ icon("search") }}<input type="search" name="q" value="{{ q }}" placeholder="Search emails and their files" aria-label="Search emails">
+    </form>
+    <nav class="chips" aria-label="Filter by state" id="email-counts" data-live>
+      <a href="{{ url_for('web.messages', q=q or None) }}" {% if not state %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
+      {% for s in route + off_route %}
+      <a href="{{ url_for('web.messages', state=s, q=q or None) }}" {% if state == s %}aria-current="true"{% endif %}>
+        <span class="dot c-{{ s }}"></span>{{ state_labels[s] }} <span class="n">{{ counts.get(s, 0) }}</span></a>
+      {% endfor %}
+    </nav>
+  </div>
+  <ul class="mail-list" id="mail-list" data-live="list" data-prefetch>
+    {% for m in rows %}
+    {% set odoo = in_odoo.get(m.id) %}
+    <li data-key="{{ m.id }}">
+      <a class="mail-row" href="{{ url_for('web.message', message_id=m.id, **filters) }}" {% if current_id == m.id %}aria-current="true"{% endif %}>
+        <span class="state-dot c-{{ m.state }}"></span>
+        <span class="mail-main">
+          <span class="mail-top">
+            <b class="mail-subject">{{ (m.subject or "No subject")|highlight(search_terms) }}</b>
+            <span class="mail-time">{{ m.received|when(short=True) }}</span>
+          </span>
+          <span class="mail-from">{{ m.sender|highlight(search_terms) }} · {{ m.mailbox_name }}</span>
+          <span class="mail-meta">
+            <span class="state-text s-{{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span>
+            {%- if odoo and odoo.records %}
+              {% for r in odoo.records[:2] %}<span class="odoo-chip {{ r.action }}"><b>{{ r.kind }}</b> {{ r.label|highlight(search_terms) }} <span>{{ r.action }}</span></span>{% endfor %}
+              {% if odoo.other %}<span class="faint">+{{ odoo.other }} line change{{ "s" if odoo.other != 1 }}</span>{% endif %}
+            {%- elif odoo and odoo.other %}<span class="faint">{{ odoo.other }} line change{{ "s" if odoo.other != 1 }}</span>
+            {%- elif m.note %}<span class="faint clip-1" title="{{ m.note }}">{{ m.note }}</span>
+            {%- elif m.state in ("done", "skipped") and m.processed_at %}<span class="nothing">Nothing written</span>
+            {%- elif m.state in ("done", "skipped") %}<span class="nothing" title="Processed before the service kept this record.">Not recorded</span>
+            {%- elif m.files %}<span class="faint">{{ m.files }} file{{ "s" if m.files != 1 }}</span>{% endif %}
+          </span>
+        </span>
+      </a>
+    </li>
+    {% endfor %}
+    {% if more %}
+    <li class="list-more" data-more="{{ url_for('web.messages', offset=more, **filters) }}">
+      <a class="btn secondary sm" href="{{ url_for('web.messages', offset=more, **filters) }}" data-full>Load more</a></li>
+    {% endif %}
+    {% if not rows %}
+    <li class="list-empty">{% if q %}No email matches “{{ q }}”.{% elif state %}No email is {{ state_labels[state]|lower }} right now.{% else %}No emails read yet.{% endif %}</li>
+    {% endif %}
+  </ul>
+  {% if q and rows %}
+  <div class="pane-foot">{{ rows|length }}{{ "+" if more }} email{{ "s" if rows|length != 1 }} match “{{ q }}”. <a href="{{ url_for('web.messages', state=state) }}">Clear search</a></div>
+  {% endif %}
+</section>

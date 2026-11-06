@@ -1,128 +1,119 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% set title = message.subject or "Email" %}
+{% set split = true %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <div class="crumbs"><a href="{{ url_for('web.messages') }}">Emails</a>{{ icon("chevron") }}<span>Email</span></div>
-    <div class="title-line"><h1>{{ message.subject or "No subject" }}</h1>
-      <span class="badge {{ message.state }}">{{ state_labels.get(message.state, message.state) }}</span></div>
+<div class="split has-detail">
+  {% include "_email_list.html" %}
+  <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
+  <div class="detail" id="email-detail" data-live>
+    <a class="back-link" href="{{ url_for('web.messages', **filters) }}">{{ icon("back") }} Emails</a>
+    <header class="detail-head">
+      <div class="detail-meta">{{ message.mailbox_name }} · {{ message.sender }} · {{ message.received|when or "Received date unknown" }}</div>
+      <div class="detail-title">
+        <h2 id="detail-title" tabindex="-1">{{ message.subject or "No subject" }}</h2>
+        <span class="badge {{ message.state }}">{{ state_labels.get(message.state, message.state) }}</span>
+      </div>
+      <form class="actions" method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn {{ '' if message.state in ('failed', 'review') else 'secondary' }}">{{ icon("rotate") }} Process again</button>
+      </form>
+    </header>
+
+    {% if message.note %}
+    <div class="callout {{ 'bad' if message.state == 'failed' else 'warn' }}">{{ icon("alert") }}<span>{{ message.note }}</span></div>
+    {% endif %}
+
+    <dl class="stat-grid">
+      <div><dt>Files</dt><dd>{{ files|length }}</dd></div>
+      <div><dt>In Odoo</dt><dd>{{ (written.records|length) if written else 0 }} record{{ "s" if not written or written.records|length != 1 }}</dd></div>
+      <div><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
+    </dl>
+
+    {% if targets %}
+    <section class="block">
+      <h3>Per Odoo connection</h3>
+      <p class="block-help">Where this email stands in each Odoo it is written to. A failure in one is retried there alone.</p>
+      <ul class="rows">
+        {% for t in targets %}
+        <li>
+          <span class="row-main">
+            <span class="row-name"><b>{{ t.name }}</b>
+              {% if t.is_production %}<span class="badge failed">Production</span>{% endif %}
+              {% if not t.active %}<span class="faint">Off</span>{% endif %}</span>
+            {% if t.note %}<span class="row-sub">{{ t.note }}</span>{% endif %}</span>
+          <span class="row-end">
+            <span class="faint">{{ t.attempts or 0 }} attempt{{ "s" if (t.attempts or 0) != 1 }}</span>
+            <span class="badge {{ t.state or 'new' }}">{{ state_labels.get(t.state or "new", t.state) }}</span>
+            {% if t.state and t.state != "new" %}
+            <form method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
+              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="connection_id" value="{{ t.id }}">
+              <button class="btn ghost sm">{{ icon("rotate") }} Again here</button></form>
+            {% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="block">
+      <h3>In Odoo</h3>
+      <p class="block-help">What this email created or changed in Odoo. Open a record to check it against the email.</p>
+      {% if written and written.records %}<div class="chip-line">{% for r in written.records %}
+        <a class="odoo-chip {{ r.action }}" {% if r.model == 'b2b.ocr.booking' %}href="{{ url_for('web.booking', booking_id=r.id) }}"{% else %}href="{{ r.link or '#' }}" target="_blank" rel="noopener noreferrer"{% endif %}>
+          <b>{{ r.kind }}</b> {{ r.label }} <span>{{ r.action }}</span></a>{% endfor %}</div>{% endif %}
+      {% if changes %}
+      <ul class="rows">
+        {% for c in changes %}
+        <li>
+          <span class="row-main">
+            {% if c.link %}<a class="primary" href="{{ c.link }}" target="_blank" rel="noopener noreferrer">{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }} {{ icon("external") }}</a>
+            {% else %}<b>{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }}</b>{% endif %}
+            <span class="row-sub">{% if c.connection_name %}{{ c.connection_name }} · {% endif %}Odoo ID {{ c.record_id }} · from {{ c.filename or "the email text" }} · {{ c.at|when(short=True) }}</span>
+            {% if c.detail %}<details class="detail-fold" id="change-{{ c.id }}"><summary>Fields written</summary><pre class="block">{{ c.detail }}</pre></details>{% endif %}
+          </span>
+          <span class="badge {{ 'ok' if c.action == 'created' else ('failed' if c.action == 'deleted' else '') }} change-action">{{ c.action }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif written and written.records %}
+      <p class="faint">Processed before changes were recorded per email: its files point to the record above, but not which fields were written.</p>
+      {% elif message.state in ("done", "skipped") and message.processed_at %}
+      <p class="faint">Nothing was written to Odoo: this email had no booking or invoice facts that needed a change.</p>
+      {% elif message.state in ("done", "skipped") %}
+      <p class="faint">Not recorded: this email was processed before the service kept a record of its Odoo changes.
+        Press <b>Process again</b> to see what it changes in Odoo; the files' earlier readings are reused, so the AI is not asked again.</p>
+      {% else %}
+      <p class="faint">Nothing written to Odoo yet. The email is {{ state_labels.get(message.state, message.state)|lower }}.</p>
+      {% endif %}
+    </section>
+
+    <section class="block">
+      <h3>Files</h3>
+      {% if files %}
+      <ul class="rows">
+        {% for f in files %}
+        <li>
+          <span class="file-icon">{{ icon("file") }}</span>
+          <span class="row-main"><b class="clip-1">{{ f.filename }}</b>
+            <span class="row-sub">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }}{% if f.odoo_id %} · Odoo ID {{ f.odoo_id }}{% endif %}{% if f.note %} · {{ f.note }}{% endif %}</span></span>
+          <span class="badge {{ f.state }}">{{ {"new": "Queued", "waiting": "Waiting for booking"}.get(f.state, f.state|capitalize) }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="faint">This email has no saved files.</p>
+      {% endif %}
+    </section>
+
+    {% if message.skipped_attachments %}
+    <details class="block fold" id="skipped-attachments"><summary>Attachments not saved</summary><pre class="block">{{ message.skipped_attachments }}</pre></details>
+    {% endif %}
+    {% if message.body_text %}
+    <details class="block fold" id="email-text"><summary>Email text</summary><pre class="block">{{ message.body_text }}</pre></details>
+    {% endif %}
   </div>
-  <form class="actions" method="post" action="{{ url_for('web.retry', message_id=message.id) }}">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button class="btn {{ '' if message.state in ('failed', 'review') else 'secondary' }}">{{ icon("rotate") }} Process again</button>
-  </form>
+  </section>
 </div>
-
-{% if message.note %}
-<div class="callout {{ 'bad' if message.state == 'failed' else 'warn' }}" style="margin-bottom:20px">{{ icon("alert") }}<span>{{ message.note }}</span></div>
-{% endif %}
-
-<div class="card">
-  <dl class="facts" style="margin:0">
-    <div><dt>From</dt><dd>{{ message.sender }}</dd></div>
-    <div><dt>Received</dt><dd>{{ message.received|when or "Unknown" }}</dd></div>
-    <div><dt>Mailbox</dt><dd>{{ message.mailbox_name }}</dd></div>
-    <div><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
-  </dl>
-</div>
-
-{% if targets %}
-<section class="card table-card">
-  <div class="card-head"><div><h2>Per Odoo connection</h2>
-    <p>Where this email stands in each Odoo it is written to. A failure in one is retried there alone.</p></div></div>
-  <table class="data">
-    <thead><tr><th>Connection</th><th>State</th><th>Attempts</th><th>Note</th><th></th></tr></thead>
-    <tbody>
-    {% for t in targets %}
-    <tr>
-      <td class="cell-main"><span class="primary">{{ t.name }}</span>
-        {% if t.is_production %}<span class="badge failed prod-badge">Production</span>{% endif %}
-        {% if not t.active %}<span class="sub">Off</span>{% endif %}</td>
-      <td data-label="State"><span class="badge {{ t.state or 'new' }}">{{ state_labels.get(t.state or "new", t.state) }}</span></td>
-      <td data-label="Attempts"><span class="num">{{ t.attempts or 0 }}</span></td>
-      <td data-label="Note" style="white-space:pre-line">{{ t.note or "" }}</td>
-      <td class="row-actions">{% if t.state and t.state != "new" %}
-        <form method="post" action="{{ url_for('web.retry', message_id=message.id) }}">
-          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="connection_id" value="{{ t.id }}">
-          <button class="btn ghost sm">{{ icon("rotate") }} Again here</button></form>{% endif %}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-<section class="card table-card">
-  <div class="card-head"><div><h2>In Odoo</h2>
-    <p>What this email created or changed in Odoo. Open a record to check it against the email.</p></div>
-    {% if in_odoo and in_odoo.records %}<div class="actions">{% for r in in_odoo.records %}
-      <a class="odoo-chip {{ r.action }}" {% if r.model == 'b2b.ocr.booking' %}href="{{ url_for('web.booking', booking_id=r.id) }}"{% else %}href="{{ r.link or '#' }}" target="_blank" rel="noopener noreferrer"{% endif %}>
-        <b>{{ r.kind }}</b> {{ r.label }} <span>{{ r.action }}</span></a>{% endfor %}</div>{% endif %}
-  </div>
-  {% if changes %}
-  <table class="data">
-    <thead><tr><th>Odoo record</th><th>Change</th><th>From</th><th>When</th></tr></thead>
-    <tbody>
-    {% for c in changes %}
-    <tr>
-      <td class="cell-main">
-        {% if c.link %}<a class="primary" href="{{ c.link }}" target="_blank" rel="noopener noreferrer">{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }} {{ icon("external") }}</a>
-        {% else %}<span class="primary">{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }}</span>{% endif %}
-        <span class="sub">{% if c.connection_name %}{{ c.connection_name }} · {% endif %}Odoo ID {{ c.record_id }}</span>
-        {% if c.detail %}<details class="detail"><summary>Fields written</summary><pre class="block">{{ c.detail }}</pre></details>{% endif %}
-      </td>
-      <td data-label="Change"><span class="badge {{ 'ok' if c.action == 'created' else ('failed' if c.action == 'deleted' else '') }} change-action">{{ c.action }}</span></td>
-      <td data-label="From">{{ c.filename or "Email text" }}</td>
-      <td data-label="When"><span class="num">{{ c.at|when }}</span></td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% elif in_odoo and in_odoo.records %}
-  <div class="card-body" style="color:var(--text-3)">Processed before changes were recorded per email: its files point to the record above, but not which fields were written.</div>
-  {% elif message.state in ("done", "skipped") and message.processed_at %}
-  <div class="card-body" style="color:var(--text-3)">Nothing was written to Odoo: this email had no booking or invoice facts that needed a change.</div>
-  {% elif message.state in ("done", "skipped") %}
-  <div class="card-body" style="color:var(--text-3)">Not recorded: this email was processed before the service kept a record of its Odoo changes.
-    Press <b>Process again</b> to see what it changes in Odoo; the files' earlier readings are reused, so the AI is not asked again.</div>
-  {% else %}
-  <div class="card-body" style="color:var(--text-3)">Nothing written to Odoo yet. The email is {{ state_labels.get(message.state, message.state)|lower }}.</div>
-  {% endif %}
-</section>
-
-<section class="card table-card">
-  <div class="card-head"><div><h2>Files</h2><p>The attachments saved from this email and what became of them.</p></div></div>
-  {% if files %}
-  <table class="data">
-    <thead><tr><th>File</th><th>Document type</th><th>State</th><th>Odoo record</th><th>Note</th></tr></thead>
-    <tbody>
-    {% for f in files %}
-    <tr>
-      <td class="cell-main"><span class="primary">{{ f.filename }}</span></td>
-      <td data-label="Document type">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }}</td>
-      <td data-label="State"><span class="badge {{ f.state }}">{{ {"new": "Queued", "waiting": "Waiting for booking"}.get(f.state, f.state|capitalize) }}</span></td>
-      <td data-label="Odoo record"><span class="num">{{ f.odoo_id or "" }}</span></td>
-      <td data-label="Note">{{ f.note or "" }}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="card-body" style="color:var(--text-3)">This email has no saved files.</div>
-  {% endif %}
-</section>
-
-{% if message.skipped_attachments %}
-<section class="card">
-  <div class="card-head"><div><h2>Attachments not saved</h2></div></div>
-  <div class="card-body"><pre class="block">{{ message.skipped_attachments }}</pre></div>
-</section>
-{% endif %}
-{% if message.body_text %}
-<section class="card">
-  <div class="card-head"><div><h2>Email text</h2></div></div>
-  <div class="card-body"><pre class="block">{{ message.body_text }}</pre></div>
-</section>
-{% endif %}
 {% endblock %}

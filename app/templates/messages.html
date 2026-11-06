@@ -1,89 +1,29 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% set title = "Emails" %}
+{% set split = true %}
 {% block content %}
-{% set search_terms = q and q.split() or [] %}
-<div class="page-head">
-  <div><h1>Emails</h1><p>Every email the service has read, and where it is on its way into Odoo.</p></div>
-  {% if total %}<div class="actions">
-    <form class="search" method="get" role="search">{% if state %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
-      {{ icon("search") }}<input type="search" name="q" value="{{ q }}" placeholder="Search all emails and their files" aria-label="Search emails"></form>
-    <a class="btn secondary" href="{{ request.full_path }}">{{ icon("refresh") }} Refresh</a></div>{% endif %}
-</div>
-
-{% if total %}
-<nav class="tabs" aria-label="Filter by state">
-  <a href="{{ url_for('web.messages', q=q or None) }}" {% if not state %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
-  {% for s in route + off_route %}
-  <a href="{{ url_for('web.messages', state=s, q=q or None) }}" {% if state == s %}aria-current="true"{% endif %}>
-    <span class="dot c-{{ s }}"></span>{{ state_labels[s] }} <span class="n">{{ counts.get(s, 0) }}</span></a>
-  {% endfor %}
-</nav>
-<div class="mix" role="img" aria-label="{% for s in route + off_route %}{{ counts.get(s, 0) }} {{ state_labels[s]|lower }}{{ ', ' if not loop.last }}{% endfor %}">
-  {% for s in route + off_route %}{% if counts.get(s) %}<span class="c-{{ s }}" style="flex: {{ counts[s] }}"></span>{% endif %}{% endfor %}
-</div>
-
-<div class="card table-card">
-{% if rows %}
-  <table class="data">
-    <thead><tr><th>Email</th><th>Received</th><th>Files</th><th>State</th><th>In Odoo</th></tr></thead>
-    <tbody>
-    {% for m in rows %}
-    {% set href = url_for('web.message', message_id=m.id) %}
-    <tr data-href="{{ href }}">
-      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ (m.subject or "No subject")|highlight(search_terms) }}</a>
-          <span class="sub">{{ m.sender|highlight(search_terms) }}, in {{ m.mailbox_name }}</span></td>
-      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
-      <td data-label="Files"><span class="num">{{ m.files }}</span></td>
-      <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span>
-        {% if m.note %}<span class="sub note-line" title="{{ m.note }}">{{ m.note }}</span>{% endif %}</td>
-      {% set odoo = in_odoo.get(m.id) %}
-      <td data-label="In Odoo">
-        {% if odoo and odoo.records %}
-          {% for r in odoo.records %}
-          <a class="odoo-chip {{ r.action }}" {% if r.model == 'b2b.ocr.booking' %}href="{{ url_for('web.booking', booking_id=r.id) }}"{% else %}href="{{ r.link or '#' }}" target="_blank" rel="noopener noreferrer"{% endif %}
-             title="{{ r.kind }} {{ r.label }} was {{ r.action }} by this email.">
-            <b>{{ r.kind }}</b> {{ r.label|highlight(search_terms) }} <span>{{ r.action }}</span></a>
-          {% endfor %}
-          {% if odoo.other %}<span class="sub">+{{ odoo.other }} line change{{ "s" if odoo.other != 1 }}</span>{% endif %}
-        {% elif odoo and odoo.other %}<span class="sub">{{ odoo.other }} line change{{ "s" if odoo.other != 1 }}</span>
-        {% elif m.state in ("done", "skipped") and m.processed_at %}<span class="nothing" title="Processed, but nothing in this email needed a change in Odoo.">Nothing written</span>
-        {% elif m.state in ("done", "skipped") %}<span class="nothing" title="Processed before the service kept this record. Process the email again to see what it changes in Odoo.">Not recorded</span>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% if q %}<div class="table-foot">{{ rows|length }}{{ "+" if more }} email{{ "s" if rows|length != 1 }} match “{{ q }}”{% if more %}; the newest 200 are shown{% endif %}. <a href="{{ url_for('web.messages', state=state) }}">Clear search</a></div>
-  {% elif more %}<div class="table-foot">The newest 200 are shown. Search to find older emails.</div>{% endif %}
-{% else %}
-  <div class="empty">
-    <div class="empty-icon">{{ icon("inbox") }}</div>
-    <h2>Nothing here</h2>
-    <p>{% if q %}No email matches “{{ q }}”{% if state %} among {{ state_labels[state]|lower }} emails{% endif %}.{% else %}No email is {{ state_labels[state]|lower }} right now.{% endif %}</p>
-    <div class="actions"><a class="btn secondary" href="{{ url_for('web.messages') }}">Show all emails</a></div>
-  </div>
-{% endif %}
-</div>
-
-{% else %}
-<div class="card">
-  <div class="empty">
-    <div class="empty-icon">{{ icon("inbox") }}</div>
-    {% if mailboxes %}
-    <h2>No emails read yet</h2>
-    <p>Emails appear here once a connected mailbox has been read. Check that the mailbox is connected to Outlook.</p>
-    <div class="actions"><a class="btn" href="{{ url_for('web.records', key='mailboxes') }}">Open mailboxes</a></div>
-    {% else %}
-    <h2>Start by adding a mailbox</h2>
-    <p>Fill in the Odoo connection under Settings, then add the Outlook mailbox the service should read.</p>
-    <div class="actions">
-      <a class="btn secondary" href="{{ url_for('web.settings') }}">Open settings</a>
-      <a class="btn" href="{{ url_for('web.record', key='mailboxes') }}">{{ icon("plus") }} Add mailbox</a>
+<div class="split">
+  {% include "_email_list.html" %}
+  <section class="pane pane-detail" id="detail" aria-label="Email">
+    <div class="detail-empty">
+      <div class="empty-icon">{{ icon("inbox") }}</div>
+      {% if total %}
+      <h2>Pick an email</h2>
+      <p>Its files, what was read and what went to each Odoo open here. Use <kbd>↑</kbd> <kbd>↓</kbd> to move through the list.</p>
+      {% elif mailboxes %}
+      <h2>No emails read yet</h2>
+      <p>Emails appear here once a connected mailbox has been read. Check that the mailbox is connected to Outlook.</p>
+      <div class="actions"><a class="btn" href="{{ url_for('web.records', key='mailboxes') }}">Open mailboxes</a></div>
+      {% else %}
+      <h2>Start by adding a mailbox</h2>
+      <p>Fill in the Odoo connection under Settings, then add the Outlook mailbox the service should read.</p>
+      <div class="actions">
+        <a class="btn secondary" href="{{ url_for('web.settings') }}">Open settings</a>
+        <a class="btn" href="{{ url_for('web.record', key='mailboxes') }}">{{ icon("plus") }} Add mailbox</a>
+      </div>
+      {% endif %}
     </div>
-    {% endif %}
-  </div>
+  </section>
 </div>
-{% endif %}
 {% endblock %}

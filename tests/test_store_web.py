@@ -264,6 +264,48 @@ def test_odoo_writes_are_logged_with_a_link(db):
     assert "eta: 2026-12-01" in rows[1]["detail"]
 
 
+def test_an_open_email_shows_beside_its_filtered_list(client, db):
+    token = signed_in(client)
+    box = mailbox(db)
+    with db:
+        db.execute("INSERT INTO message (id, mailbox_id, dedupe_key, subject, state, received) VALUES "
+                   "(1, ?, 'a', 'BKG 1', 'failed', '2026-11-05 10:00:00'), (2, ?, 'b', 'BKG 2', 'done', '2026-11-05 11:00:00')",
+                   (box["id"],) * 2)
+    page = client.get("/messages/1?state=failed").get_data(as_text=True)
+    assert 'href="/messages/1?state=failed" aria-current="true"' in page  # the list keeps the filter
+    assert "BKG 2" not in page.split('id="detail"')[0]                     # filtered out of the list
+    assert 'data-list-key="emails failed "' in page and 'id="email-detail"' in page
+    resp = client.post("/messages/1/retry?state=failed", data={"csrf": token})
+    assert resp.headers["Location"] == "/messages/1?state=failed"
+
+
+def test_the_email_list_hands_out_the_next_page(client, db, monkeypatch):
+    signed_in(client)
+    monkeypatch.setattr("app.web.EMAILS_PAGE", 2)
+    box = mailbox(db)
+    with db:
+        for n in range(5):
+            db.execute("INSERT INTO message (mailbox_id, dedupe_key, subject, received) VALUES (?, ?, ?, ?)",
+                       (box["id"], f"k{n}", f"Mail {n}", f"2026-11-0{n + 1} 08:00:00"))
+    first = client.get("/messages").get_data(as_text=True)
+    assert "Mail 4" in first and "Mail 3" in first and "Mail 2" not in first
+    assert 'data-more="/messages?offset=2"' in first
+    second = client.get("/messages?offset=2").get_data(as_text=True)
+    assert "Mail 2" in second and "Mail 1" in second and "Mail 4" not in second.split('id="detail"')[0]
+
+
+def test_setup_pages_list_their_records_beside_the_form(client, db):
+    signed_in(client)
+    box = mailbox(db, name="Customs Fetching")
+    mailbox(db, name="Bills")
+    page = client.get(f"/mailboxes/{box['id']}").get_data(as_text=True)
+    assert 'data-list-key="mailboxes"' in page and "Bills" in page
+    assert f'href="/mailboxes/{box["id"]}" aria-current="true"' in page
+    assert 'id="record-form"' in page
+    runs = client.get(f"/mailboxes/{box['id']}/runs").get_data(as_text=True)
+    assert 'data-list-key="mailboxes"' in runs and "Run history" in runs
+
+
 def test_clear_starts_a_mailbox_over_and_keeps_its_settings(client, db, tmp_path):
     token = signed_in(client)
     box = mailbox(db, folder="Inbox", fetch_resume_from="2026-10-19 12:00:41", status="success",

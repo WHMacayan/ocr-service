@@ -3,69 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#FFFFFF">
+  <meta name="color-scheme" content="light dark">
   <title>{% if title %}{{ title }} · {% endif %}OCR Service</title>
+  <script src="{{ url_for('static', filename='theme.js') }}?v=12"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=11">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=12">
 </head>
 <body>
 {% set here = request.path %}
-{% macro brand() %}
-  <a class="brand" href="{{ url_for('web.messages') }}">
-    <span class="brand-mark">{{ icon("scan") }}</span>
-    <span class="brand-name">OCR Service<small>Outlook to Odoo</small></span>
-  </a>
-{% endmacro %}
 
 {% if session.signed_in %}
+{% macro item(href, name, label, current, primary=False) %}
+  <a class="rail-item" href="{{ href }}" {% if current %}aria-current="page"{% endif %} {% if primary %}data-primary{% endif %}>
+    {{ icon(name) }}<span class="rail-label">{{ label }}</span>{{ caller() if caller }}</a>
+{% endmacro %}
 <div class="shell">
-  <header class="topbar">
-    {{ brand() }}
-    <button class="btn ghost search-icon" type="button" aria-label="Search" data-search-open>{{ icon("search") }}</button>
-    <button class="btn ghost menu-btn" type="button" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false" data-menu>{{ icon("menu") }}</button>
-  </header>
-
-  <aside class="sidebar" id="sidebar">
-    {{ brand() }}
-    <button class="search-trigger" type="button" data-search-open>
-      {{ icon("search") }}<span>Search</span><kbd>Ctrl K</kbd></button>
-    <nav class="nav" aria-label="Main">
-      <a href="{{ url_for('web.messages') }}" {% if here.startswith('/messages') %}aria-current="page"{% endif %}>
-        {{ icon("inbox") }} Emails {% if failed_count %}<span class="count" title="Failed emails">{{ failed_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('web.booking_list') }}" {% if here.startswith('/bookings') %}aria-current="page"{% endif %}>
-        {{ icon("file") }} Bookings</a>
-      <a href="{{ url_for('web.scraped_bills') }}" {% if here.startswith('/scraped-bills') %}aria-current="page"{% endif %}>
-        {{ icon("receipt") }} Scraped bills</a>
-      <a href="{{ url_for('web.customs_batches') }}" {% if here.startswith('/customs') %}aria-current="page"{% endif %}>
-        {{ icon("landmark") }} Customs</a>
-      <a href="{{ url_for('web.activity') }}" {% if here.startswith('/activity') %}aria-current="page"{% endif %}>
-        {{ icon("activity") }} Activity</a>
-      <div class="nav-label">Setup</div>
+  <nav class="rail" id="rail" aria-label="Main">
+    <a class="rail-brand" href="{{ url_for('web.messages') }}" aria-label="OCR Service: emails">OCR</a>
+    <div class="rail-group">
+      {% call item(url_for('web.messages'), "inbox", "Emails", here.startswith('/messages'), True) %}
+        <span class="rail-count" id="rail-failed" data-live title="Failed emails" {% if not failed_count %}hidden{% endif %}>{{ failed_count }}</span>
+      {% endcall %}
+      {{ item(url_for('web.booking_list'), "file", "Bookings", here.startswith('/bookings'), True) }}
+      {{ item(url_for('web.scraped_bills'), "receipt", "Scraped bills", here.startswith('/scraped-bills')) }}
+      {{ item(url_for('web.customs_batches'), "landmark", "Customs", here.startswith('/customs'), True) }}
+      {{ item(url_for('web.activity'), "activity", "Activity", here.startswith('/activity'), True) }}
+    </div>
+    <div class="rail-group">
+      <span class="rail-heading">Setup</span>
       {% for key, f in forms.items() %}
-      <a href="{{ url_for('web.records', key=key) }}" {% if here.startswith('/' ~ key) %}aria-current="page"{% endif %}>
-        {{ icon({"mailboxes": "mail", "vendor-mappings": "users", "subject-formats": "type"}[key]) }} {{ f.title }}</a>
+      {{ item(url_for('web.records', key=key), {"mailboxes": "mail", "vendor-mappings": "users", "subject-formats": "type"}[key], f.title, here.startswith('/' ~ key)) }}
       {% endfor %}
-      <a href="{{ url_for('web.settings') }}" {% if here.startswith('/settings') %}aria-current="page"{% endif %}>
-        {{ icon("sliders") }} Settings</a>
-    </nav>
-    <form class="sidebar-foot" method="post" action="{{ url_for('web.logout') }}">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <a class="foot-link" href="{{ url_for('web.change_password') }}" {% if here.startswith('/password') %}aria-current="page"{% endif %}>{{ icon("key") }} Change password</a>
-      <button>{{ icon("logout") }} Log out</button>
-    </form>
-  </aside>
+      {{ item(url_for('web.settings'), "sliders", "Settings", here.startswith('/settings') or here.startswith('/connections')) }}
+    </div>
+    <div class="rail-group rail-foot">
+      <button class="rail-item" type="button" data-search-open>{{ icon("search") }}<span class="rail-label">Search <kbd>Ctrl K</kbd></span></button>
+      <button class="rail-item" type="button" data-theme-toggle>
+        <span class="theme-icon" data-theme-icon="system">{{ icon("monitor") }}</span>
+        <span class="theme-icon" data-theme-icon="light">{{ icon("sun") }}</span>
+        <span class="theme-icon" data-theme-icon="dark">{{ icon("moon") }}</span>
+        <span class="rail-label" data-theme-label>Theme: match Windows</span></button>
+      {{ item(url_for('web.change_password'), "key", "Change password", here.startswith('/password')) }}
+      <form method="post" action="{{ url_for('web.logout') }}" data-full>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="rail-item">{{ icon("logout") }}<span class="rail-label">Log out</span></button>
+      </form>
+    </div>
+    <button class="rail-item rail-more" type="button" data-menu aria-controls="rail" aria-expanded="false">
+      {{ icon("more") }}<span class="rail-label">More</span></button>
+  </nav>
   <div class="scrim" data-menu-close></div>
 
-  <main class="main">
+  <main class="main {{ 'is-split' if split else '' }}" id="main">
     {% set production_on = connections_on|selectattr("is_production")|list %}
     {% set others_on = connections_on|rejectattr("is_production")|list %}
     {% if connections_on %}
     <a class="env-bar {{ 'prod' if production_on else '' }}" href="{{ url_for('web.settings') }}">
+      <span class="env-dot"></span>
       {% if production_on %}<b>Writing to PRODUCTION: {{ production_on|map(attribute="name")|join(", ") }}</b>{% endif %}
       {% if others_on %}<span>{{ "Also writing to" if production_on else "Writing to" }} {{ others_on|map(attribute="name")|join(", ") }}</span>{% endif %}
     </a>
+    {% else %}
+    <a class="env-bar off" href="{{ url_for('web.settings') }}"><span class="env-dot"></span><span>No Odoo connection is on: nothing is written to Odoo</span></a>
     {% endif %}
     {% block content %}{% endblock %}
   </main>
@@ -90,12 +91,13 @@
     </div>
   </div>
 </div>
+<div class="progress" id="progress" aria-hidden="true"></div>
 {% endif %}
 {% if not session.signed_in %}
   {% block bare %}{% endblock %}
 {% endif %}
 
-<div class="toasts" aria-live="polite">
+<div class="toasts" id="toasts" aria-live="polite">
   {% for category, text in get_flashed_messages(with_categories=true) %}
   <div class="toast {{ 'error' if category == 'error' else '' }}" role="{{ 'alert' if category == 'error' else 'status' }}">
     <span class="t-icon">{{ icon("alert" if category == "error" else "check") }}</span>
@@ -105,6 +107,6 @@
   {% endfor %}
 </div>
 
-<script src="{{ url_for('static', filename='app.js') }}?v=11"></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=12"></script>
 </body>
 </html>

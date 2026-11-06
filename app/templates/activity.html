@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% block content %}
+{% set older_shown = request.args.get("before") %}
+<div class="page">
 {% set kind_icons = {"settings": "sliders", "security": "key", "processing": "inbox", "odoo": "external"} %}
 {% set level_badges = {"error": ("failed", "Error"), "warning": ("review", "Warning")} %}
 
@@ -24,13 +26,13 @@
 </nav>
 <div style="height:20px"></div>
 
-<div class="card table-card">
+<div class="card table-card" id="activity-feed" {% if not older_shown %}data-live{% endif %}>
 {% if rows %}
   <table class="data activity">
     <thead><tr><th>When</th><th>What happened</th><th>Type</th><th>By</th></tr></thead>
     <tbody>
     {% for a in rows %}
-    <tr>
+    <tr data-key="{{ a.id }}">
       <td data-label="When"><span class="num">{{ a.at|when }}</span></td>
       <td class="cell-main">
         <span class="what">
@@ -38,7 +40,7 @@
           {% if a.link %}<a class="primary" href="{{ a.link }}" {% if a.link.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ a.summary }}{% if a.link.startswith('http') %} {{ icon("external") }}{% endif %}</a>
           {% else %}<span class="primary">{{ a.summary }}</span>{% endif %}
         </span>
-        {% if a.detail %}<details class="detail"><summary>Details</summary><pre class="block">{{ a.detail }}</pre></details>{% endif %}
+        {% if a.detail %}<details class="detail" id="activity-{{ a.id }}"><summary>Details</summary><pre class="block">{{ a.detail }}</pre></details>{% endif %}
       </td>
       <td data-label="Type"><span class="kind">{{ icon(kind_icons.get(a.kind, "info")) }} {{ labels.get(a.kind, a.kind) }}</span></td>
       <td data-label="By">{{ "The service" if a.actor == "worker" else a.actor|replace("admin from ", "Admin, ") }}</td>
@@ -57,5 +59,6 @@
     {% if query or kind %}<div class="actions"><a class="btn secondary" href="{{ url_for('web.activity') }}">Show everything</a></div>{% endif %}
   </div>
 {% endif %}
+</div>
 </div>
 {% endblock %}

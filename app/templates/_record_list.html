@@ -1,0 +1,52 @@
+{% from "_icons.html" import icon %}
+{# The list beside a mailbox, vendor mapping or subject format; kept in place while one opens beside it. #}
+{% set listed = record_list(key) %}
+{% set form_ = listed.form %}
+{% set status_labels = {"new": "Never read", "running": "Reading now", "success": "Read", "partial": "Partly read", "error": "Failed"} %}
+{% set purposes = {"freight_booking": "Freight Booking", "bill_matching": "Bill Matching", "customs_entry": "Customs Entry Summaries"} %}
+<section class="pane pane-list" aria-label="{{ form_.title }}" data-list-key="{{ key }}">
+  <div class="pane-head">
+    <div class="pane-title">
+      <h1>{{ form_.title }}</h1>
+      <a class="btn sm" href="{{ url_for('web.record', key=key) }}">{{ icon("plus") }} Add</a>
+    </div>
+    {% if listed.rows|length > 6 %}
+    <div class="search">{{ icon("search") }}<input type="search" placeholder="Filter {{ form_.title|lower }}" aria-label="Filter {{ form_.title|lower }}" data-filter="#record-list"></div>
+    {% endif %}
+  </div>
+  <ul class="mail-list" id="record-list" {% if key == "mailboxes" %}data-live="list"{% endif %} data-prefetch>
+    {% for row in listed.rows %}
+    {% set first = form_.columns[0] %}
+    <li data-key="{{ row.id }}">
+      <a class="mail-row" href="{{ url_for('web.record', key=key, record_id=row.id) }}" {% if record_id == row.id %}aria-current="true"{% endif %}>
+        {% if key == "mailboxes" %}<span class="state-dot s-{{ row.status if row.active else 'off' }}"></span>{% endif %}
+        <span class="mail-main">
+          <span class="mail-top">
+            <b class="mail-subject">{{ row[first] or "Unnamed" }}</b>
+            {% if "active" in row.keys() and not row.active %}<span class="faint">Off</span>{% endif %}
+            {% if key == "mailboxes" and row.active %}<span class="mail-time">{{ status_labels.get(row.status, row.status) }}</span>{% endif %}
+          </span>
+          <span class="mail-from">
+            {%- set ns = namespace(shown=0) %}
+            {%- for column in form_.columns[1:] if column not in ("active", "status") %}
+              {%- set value = row[column] %}
+              {%- if value not in (none, "") and not (column == "confirms_booking" and not value) %}
+                {%- if ns.shown %} · {% endif %}{% set ns.shown = ns.shown + 1 -%}
+                {%- if column == "purpose" %}{{ purposes.get(value, value) }}
+                {%- elif column == "confirms_booking" %}{{ "Confirms booking" if value else "" }}
+                {%- elif column in ("role", "freight_mode") %}{{ value|capitalize }}
+                {%- elif column == "subject_pattern" %}<code>{{ value }}</code>
+                {%- elif column == "last_sync" %}{{ value|when(short=True) }}
+                {%- else %}{{ value }}{% endif %}
+              {%- endif %}
+            {%- endfor %}
+          </span>
+        </span>
+      </a>
+    </li>
+    {% else %}
+    <li class="list-empty">No {{ form_.title|lower }} yet.</li>
+    {% endfor %}
+  </ul>
+  <div class="pane-foot" data-filter-empty hidden>Nothing matches the filter.</div>
+</section>
