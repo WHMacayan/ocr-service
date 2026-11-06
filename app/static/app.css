@@ -526,11 +526,14 @@ a.odoo-chip:hover { border-color: var(--accent-text); color: var(--accent-text);
 
 /* ── booking record: service against Odoo ──────────────────────── */
 
-.record-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 20px; align-items: start; }
+.record-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.data.compare td { padding-top: 10px; padding-bottom: 10px; }
+.data.compare .src { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                     font-size: 12px; text-decoration: none; }
 .record-grid .card + .card { margin-top: 0; }
 .data.compare { table-layout: fixed; }
 .data.compare td { vertical-align: top; overflow-wrap: anywhere; }
-.data.compare th:first-child, .data.compare td:first-child { width: 30%; }
+.data.compare th:first-child, .data.compare td:first-child { width: 24%; }
 .data.compare tr.differs td { background: var(--warn-soft); }
 .data.compare tr.not_written td:last-child { color: var(--text-3); }
 .cmp-value { display: inline-flex; align-items: flex-start; gap: 6px; font-weight: 500; color: var(--text); }

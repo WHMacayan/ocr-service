@@ -49,6 +49,6 @@ def test_booking_record_sets_what_the_service_wrote_against_odoo(client, db, mon
     page = client.get("/bookings/41").get_data(as_text=True)
     assert "1 field in Odoo differs" in page
     assert 'class="differs"' in page and "EVER GIVEN" in page and "MSC ANNA" in page
-    assert "Sentury Morocco" in page and "↳ from bc.pdf" in page
+    assert "Sentury Morocco" in page and "from bc.pdf</a>" in page
     assert "MSCU1234567" in page and 'href="/messages/1">bc.pdf' in page
     assert "Conflict Detected" in page

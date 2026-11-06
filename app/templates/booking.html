@@ -38,7 +38,7 @@
 {% endif %}
 
 <div class="record-grid">
-{% for title, rows in sections %}
+{% for title, rows in sections if rows %}
 <section class="card table-card">
   <div class="card-head"><div><h2>{{ title }}</h2></div></div>
   <table class="data compare">
@@ -48,12 +48,12 @@
     <tr class="{{ r.state }}">
       <td class="cell-main"><span class="primary">{{ r.label }}</span></td>
       <td data-label="Odoo now">{% if r.odoo is none %}<span class="nothing">Not read</span>{% else %}{{ r.odoo or "–" }}
-        {% if r.odoo_source %}<span class="sub">↳ from {{ r.odoo_source }}</span>{% endif %}{% endif %}</td>
+        {% if r.odoo_source and r.odoo_source != r.service_source %}<span class="sub src" title="{{ r.odoo_source }}">from {{ r.odoo_source }}</span>{% endif %}{% endif %}</td>
       <td data-label="Service wrote">
-        {% if r.state == "not_written" %}<span class="nothing">Not written by the service</span>
+        {% if r.state == "not_written" %}<span class="nothing">–</span>
         {% else %}
           <span class="cmp-value">{% if r.state == "same" %}{{ icon("check") }}{% else %}{{ icon("alert") }}{% endif %}{{ r.service_shown or "–" }}</span>
-          <a class="sub" href="{{ url_for('web.message', message_id=r.message_id) }}">↳ from {{ r.service_source }}</a>
+          <a class="sub src" href="{{ url_for('web.message', message_id=r.message_id) }}" title="{{ r.service_source }}">from {{ r.service_source }}</a>
         {% endif %}
       </td>
     </tr>
