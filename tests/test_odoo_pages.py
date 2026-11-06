@@ -27,8 +27,8 @@ class Odoo(FakeOdoo):
 @pytest.fixture
 def odoo(monkeypatch):
     fake = Odoo()
-    monkeypatch.setattr("app.web.Odoo.from_store", lambda db: fake)
-    monkeypatch.setattr("app.bookings._fields_cache", {})
+    monkeypatch.setattr("app.odoo.client.Odoo.from_store", lambda db: fake)
+    monkeypatch.setattr("app.web.booking_compare._fields_cache", {})
     return fake
 
 

@@ -1,6 +1,6 @@
 import json
 
-from app import bookings
+from app.web import booking_compare
 
 from fakes import mailbox
 from test_store_web import client, signed_in  # noqa: F401  (fixtures)
@@ -39,8 +39,8 @@ def test_booking_record_sets_what_the_service_wrote_against_odoo(client, db, mon
                 ("created", "b2b.ocr.booking.container", 9, {"booking_id": 41, "container_no": "MSCU1234567"})):
             db.execute("INSERT INTO odoo_change (message_id, file_id, action, model, record_id, values_json) "
                        "VALUES (1, 5, ?, ?, ?, ?)", (action, model, record, json.dumps(values)))
-    monkeypatch.setattr("app.web.Odoo.from_store", lambda db: Odoo())
-    bookings._fields_cache.clear()
+    monkeypatch.setattr("app.odoo.client.Odoo.from_store", lambda db: Odoo())
+    booking_compare._fields_cache.clear()
     signed_in(client)
 
     listing = client.get("/bookings").get_data(as_text=True)

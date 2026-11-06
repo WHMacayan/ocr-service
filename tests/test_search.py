@@ -1,4 +1,4 @@
-from app import search
+from app.web import search
 from app.core import store
 
 from fakes import connection, mailbox

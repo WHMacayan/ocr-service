@@ -5,7 +5,7 @@ A page is plain data: the form's title field, status bar, alerts, field sections
 hold either more fields or a child table.
 """
 
-from .bookings import fields_info, shown
+from .booking_compare import fields_info, shown
 
 
 def child(model, inverse, columns, link=None):

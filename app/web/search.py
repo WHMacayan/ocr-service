@@ -1,4 +1,4 @@
-"""One search over everything the page shows: emails (with their files and what was read from
+﻿"""One search over everything the page shows: emails (with their files and what was read from
 them), mailboxes, vendor mappings, subject formats, settings, the activity log and the pages.
 
 Query syntax: every word must match (in any field); "quoted words" match as a phrase;
@@ -9,7 +9,11 @@ vendors, formats, settings, activity, pages) keeps one kind of result.
 import re
 from collections import namedtuple
 
-from .core.settings import SETTINGS
+from flask import g, render_template, request
+
+from . import bp
+from .base import STATE_LABELS
+from ..core.settings import SETTINGS
 
 # What the Odoo connections section of the Settings page is found by.
 CONNECTIONS_TEXT = "odoo connections address url database login user api key production staging development test"
@@ -148,3 +152,16 @@ def run(db, text, limit=6, state_labels=None):
         hits = [p for p in PAGES if all(t.lower() in p[0].lower() for t in query.terms)]
         add("pages", [Item(title, "Go to page", url, None) for title, url in hits[:limit]], len(hits))
     return groups
+
+
+@bp.route("/search")
+def search_page():
+    """Everything matching the search box: a page, or JSON for the quick """
+    q = (request.args.get("q") or "").strip()
+    if request.args.get("format") == "json":
+        groups = run(g.db, q, limit=6, state_labels=STATE_LABELS)
+        return {"query": q, "terms": parse(q).terms,
+                "groups": [{"key": key, "label": label, "more": more,
+                            "items": [item._asdict() for item in items]} for key, label, items, more in groups]}
+    groups = run(g.db, q, limit=50, state_labels=STATE_LABELS)
+    return render_template("search.html", title="Search", q=q, groups=groups, terms=parse(q).terms)

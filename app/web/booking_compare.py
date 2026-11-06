@@ -7,7 +7,7 @@ other than what the service last wrote: a person changed it, or something else d
 
 import json
 
-from .core.store import reference_changes
+from ..core.store import reference_changes
 
 BOOKING = "b2b.ocr.booking"
 

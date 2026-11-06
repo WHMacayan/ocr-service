@@ -74,7 +74,7 @@ def test_an_expired_action_form_goes_back_to_the_page_it_came_from(client):
 
 
 def test_times_are_marked_for_the_viewers_time_zone(client):
-    from app.web import when
+    from app.web.ui import when
     assert when("2026-11-06 01:54:48") == ('<time datetime="2026-11-06T01:54:48Z" title="2026-11-06 01:54:48 UTC">'
                                           '2026-11-06 01:54:48 UTC</time>')
     assert when("2026-11-06T09:54:48+08:00").startswith('<time datetime="2026-11-06T01:54:48Z"')
@@ -103,13 +103,13 @@ def test_activity_pages_like_odoo_and_takes_a_typed_range(client, db):
 
 
 def test_odoo_lists_ask_odoo_only_for_the_page_shown(client, db, monkeypatch):
-    from app import odoo_pages
+    from app.web import odoo_forms
     signed_in(client)
     asked = []
-    monkeypatch.setattr("app.web.odoo_pages.record_ids", lambda db, purpose: set(range(1, 201)))
-    monkeypatch.setattr("app.web.odoo_pages.email_counts", lambda db, purpose: {})
-    monkeypatch.setattr("app.web._odoo_or_error", lambda: (object(), None))
-    monkeypatch.setattr(odoo_pages, "list_rows", lambda odoo, model, ids, columns: (
+    monkeypatch.setattr("app.web.odoo_forms.record_ids", lambda db, purpose: set(range(1, 201)))
+    monkeypatch.setattr("app.web.odoo_forms.email_counts", lambda db, purpose: {})
+    monkeypatch.setattr("app.web.odoo_records._odoo_or_error", lambda: (object(), None))
+    monkeypatch.setattr(odoo_forms, "list_rows", lambda odoo, model, ids, columns: (
         asked.append(sorted(ids)) or ([("name", "Name")], [{"id": i, "raw": {}, "name": f"B{i}"} for i in sorted(ids, reverse=True)])))
     page = client.get("/scraped-bills?offset=80").get_data(as_text=True)
     assert asked == [list(range(41, 121))] and 'value="81-160"' in page and "/ 200" in page
@@ -180,7 +180,7 @@ def test_odoo_lists_load_sorted_by_name_and_long_ones_are_searchable(client, mon
             count = 40 if model == "res.partner" else 2
             return [{"id": n, "display_name": f"{model} {n}"} for n in range(1, count + 1)]
 
-    monkeypatch.setattr("app.web.Odoo.from_store", lambda db: FakeOdoo())
+    monkeypatch.setattr("app.odoo.client.Odoo.from_store", lambda db: FakeOdoo())
     signed_in(client)
     page = client.get("/vendor-mappings/new").get_data(as_text=True)
 
@@ -252,7 +252,8 @@ def test_changing_the_password_signs_out_other_browsers(client, db):
 
 
 def test_every_field_explains_itself_in_a_tooltip(client):
-    from app.web import FORMS, SETTING_FIELDS
+    from app.web.forms import FORMS
+    from app.web.settings import SETTING_FIELDS
     assert all(f.tip for form in FORMS.values() for f in form.fields)
     assert all(f.tip for f in SETTING_FIELDS)
     signed_in(client)
@@ -340,7 +341,7 @@ def test_an_open_email_shows_its_whole_conversation(client, db):
 
 def test_the_email_list_hands_out_the_next_page(client, db, monkeypatch):
     signed_in(client)
-    monkeypatch.setattr("app.web.EMAILS_PAGE", 2)
+    monkeypatch.setattr("app.web.emails.EMAILS_PAGE", 2)
     box = mailbox(db)
     with db:
         for n in range(5):
