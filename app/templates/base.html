@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>{% if title %}{{ title }} · {% endif %}OCR Service</title>
   <script src="{{ url_for('static', filename='theme.js') }}?v=12"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=24">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=26">
 </head>
 <body>
 {% set here = request.path %}
@@ -42,7 +42,7 @@
         <span class="theme-icon" data-theme-icon="dark">{{ icon("moon") }}</span>
         <span class="visually-hidden" data-theme-label>Theme: match Windows</span></button>
       <details class="o-dropdown o-user">
-        <summary aria-label="Account"><span class="o-avatar">A</span></summary>
+        <summary aria-label="Account"><span class="o-avatar">A</span><span class="o-user-name">Administrator</span></summary>
         <div class="o-dropdown-menu right">
           <span class="o-dropdown-head">Admin</span>
           <a href="{{ url_for('web.change_password') }}">Change password</a>

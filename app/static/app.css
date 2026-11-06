@@ -965,6 +965,77 @@ html:has(.main.is-split), html:has(.main.is-fill) { overflow: hidden; }
   .main.is-fill { flex: 1; height: auto; }
   html:has(.main.is-fill) { overflow: visible; }
 }
+/* ── Matched to an Odoo 20 screen (Chart of Accounts, dark) ─────────────────────────────────── */
+:root { --o-plum: #714B67; --o-plum-hover: #5E3E56; --card: #FFFFFF; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --o-plum: #9C4E8A; --o-plum-hover: #B05C9D; --accent: #9C4E8A; --accent-hover: #B05C9D;
+    --bg: #1D1E23; --surface: #26282D; --surface-2: #2B2D33; --surface-3: #303238; --card: #26282D;
+    --border: #393B41; --border-soft: #33353B; --border-strong: #46484F;
+    --text: #E4E4E7; --text-2: #B9BAC0; --text-3: #A0A2A8;
+  }
+}
+:root[data-theme="dark"] {
+  --o-plum: #9C4E8A; --o-plum-hover: #B05C9D; --accent: #9C4E8A; --accent-hover: #B05C9D;
+  --bg: #1D1E23; --surface: #26282D; --surface-2: #2B2D33; --surface-3: #303238; --card: #26282D;
+  --border: #393B41; --border-soft: #33353B; --border-strong: #46484F;
+  --text: #E4E4E7; --text-2: #B9BAC0; --text-3: #A0A2A8;
+}
+body { font-size: 14px; }
+
+/* top bar: same ground as the page, large app name, plain-text menus */
+.o-navbar { background: var(--bg); border-bottom: 0; height: 50px; padding: 0 16px; }
+:root { --nav-h: 50px; }
+.o-brand { font-size: 19px; font-weight: 500; gap: 10px; margin-right: 14px; }
+.o-menus > a, .o-dropdown > summary { padding: 0 10px; font-size: 15px; font-weight: 400; color: var(--text); border-radius: 6px; }
+.o-menus > a[aria-current="page"], .o-dropdown > summary[aria-current="page"] { background: none; font-weight: 500; }
+.o-menus > a:hover, .o-dropdown > summary:hover { background: var(--surface-3); }
+.o-menus .o-dropdown > summary::after { display: none; }
+.o-nav-btn { color: var(--text); }
+.o-user > summary { display: inline-flex; align-items: center; gap: 8px; padding: 0 6px; height: 36px; border-radius: 6px; }
+.o-avatar { border-radius: 5px; background: #7C6CF0; }
+.o-user-name { font-size: 13px; color: var(--text); }
+.env-bar { margin-top: 0; }
+
+/* header row: New/actions and title on the left, a pill search in the middle */
+.page-head { border-bottom: 0; padding: 12px 0 14px; margin-bottom: 4px; }
+.page-head:has(> .actions .search), .page-head:has(> .search) {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 560px) minmax(0, 1fr); }
+.page-head:has(> .actions .search) > .actions { justify-content: center; }
+.page-head:has(> .actions .search) > .actions .search, .page-head > .search { width: 100%; }
+.tabs a[aria-current="true"] { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.tabs a[aria-current="true"] .n { background: var(--border); }
+.page-head h1 { font-size: 20px; font-weight: 400; }
+.crumbs { font-size: 20px; }
+.search input { height: 40px; border-radius: 999px; padding-left: 40px; background: var(--card); border: 1px solid var(--border-strong); }
+.search svg { left: 15px; }
+.pane-head .search input { height: 38px; }
+.btn { height: 36px; padding: 0 14px; font-size: 15px; font-weight: 500; }
+.btn.sm { height: 30px; font-size: 13.5px; }
+.btn.secondary { background: transparent; border: 1px solid var(--border-strong); color: var(--text); }
+.btn.secondary:hover { background: var(--surface-3); border-color: var(--border-strong); }
+.btn:not(.secondary):not(.ghost):not(.danger) { background: var(--o-plum); border-color: var(--o-plum); }
+.btn:not(.secondary):not(.ghost):not(.danger):hover { background: var(--o-plum-hover); border-color: var(--o-plum-hover); }
+
+/* lists: a rounded card a shade lighter than the page, roomy rows, quiet column names */
+.card { background: var(--card); border-color: var(--border-soft); border-radius: 10px; }
+.data th { background: var(--card); color: var(--text-2); font-weight: 400; font-size: 14.5px; padding: 13px 18px;
+           border-bottom: 1px solid var(--border); }
+.data td { padding: 13px 18px; font-size: 14.5px; color: var(--text); border-bottom: 1px solid var(--border-soft); }
+.data .primary { font-weight: 400; }
+.data tr[data-href]:hover td { background: var(--surface-3); }
+.fill-card thead th { background: var(--card); }
+.pane-list { background: var(--card); }
+.mail-row { padding: 12px 16px; border-bottom-color: var(--border-soft); }
+.mail-subject { font-weight: 500; font-size: 14.5px; }
+.chips a[aria-current="true"] { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.o-sheet, .kv-card, .rows, .thread, .fold { background: var(--card); }
+
+@media (max-width: 900px) {
+  .page-head:has(> .actions .search), .page-head:has(> .search) { display: flex; }
+  .o-user-name { display: none; }
+}
+
 /* A hidden tooltip takes no room, so one near the right edge cannot widen the page. */
 .tip-text { display: none; }
 .tip:hover .tip-text, .tip-btn:focus-visible + .tip-text, .tip.open .tip-text { display: block; animation: fade-in .15s ease-out; }
