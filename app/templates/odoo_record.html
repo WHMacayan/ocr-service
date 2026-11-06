@@ -28,37 +28,33 @@
 <div class="callout {{ kind }}" style="margin-bottom:20px">{{ icon("alert") }}<span style="white-space:pre-line">{{ text }}</span></div>
 {% endfor %}
 
-<div class="record-grid">
-{% for section, fields in record.sections %}
-<section class="card table-card">
+{% macro field_tiles(fields) %}
+<dl class="field-grid">
+  {% for label, value in fields %}
+  {% set text = (value if value not in (none, false, "") else "–")|string %}
+  <div class="field-tile {{ 'wide' if text|length > 48 or '\n' in text }}">
+    <dt>{{ label }}</dt><dd>{{ text }}</dd>
+  </div>
+  {% endfor %}
+</dl>
+{% endmacro %}
+
+{% for section, fields in record.sections if fields %}
+<section class="card record-card">
   <div class="card-head"><div><h2>{{ section }}</h2></div></div>
-  <table class="data">
-    <tbody>
-    {% for label, value in fields %}
-    <tr><td class="cell-main"><span class="primary">{{ label }}</span></td>
-      <td data-label="{{ label }}" style="white-space:pre-line">{{ value or "–" }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  {{ field_tiles(fields) }}
 </section>
 {% endfor %}
-</div>
 
-{% for tab in record.tabs %}
-<section class="card table-card" style="margin-top:20px">
+{% for tab in record.tabs if tab.fields is not defined or tab.fields %}
+<section class="card {{ 'record-card' if tab.fields is defined else 'table-card' }}">
   {% if tab.fields is defined %}
   <div class="card-head"><div><h2>{{ tab.title }}</h2></div></div>
-  <table class="data">
-    <tbody>
-    {% for label, value in tab.fields %}
-    <tr><td class="cell-main"><span class="primary">{{ label }}</span></td>
-      <td data-label="{{ label }}" style="white-space:pre-line">{{ value or "–" }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  {{ field_tiles(tab.fields) }}
   {% else %}
   <div class="card-head"><div><h2>{{ tab.title }}</h2><p>{{ tab.rows|length }} in Odoo</p></div></div>
   {% if tab.rows %}
+  <div class="table-scroll">
   <table class="data">
     <thead><tr>{% for c in tab.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
     <tbody>
@@ -73,6 +69,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <div class="empty"><p>None in Odoo.</p></div>
   {% endif %}
@@ -82,7 +79,7 @@
 {% endif %}
 
 {% if emails %}
-<section class="card table-card" style="margin-top:20px">
+<section class="card table-card">
   <div class="card-head"><div><h2>Emails that fed this record</h2><p>Open an email to see its files and what was done with them.</p></div></div>
   <table class="data">
     <thead><tr><th>Email</th><th>Received</th><th>State</th></tr></thead>

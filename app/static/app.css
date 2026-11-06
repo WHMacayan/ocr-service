@@ -432,7 +432,20 @@ table.data { border-collapse: collapse; width: 100%; }
 
 /* ── Odoo status bar (scraped bills, customs) ──────────────────── */
 
-.statusbar { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0 0 20px; padding: 4px;
+/* An Odoo record's fields: tiles that fill the width and reflow on narrow screens. */
+.field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin: 0;
+              padding: 18px 22px 22px; }
+.field-tile { min-width: 0; padding: 12px 16px; background: var(--surface-2); border: 1px solid var(--border-soft);
+              border-radius: 10px; }
+.field-tile.wide { grid-column: 1 / -1; }
+.field-tile dt { font-size: 12px; color: var(--text-3); margin-bottom: 4px; }
+.field-tile dd { margin: 0; font-size: 15px; font-weight: 500; color: var(--text); white-space: pre-line;
+                 overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.field-tile.wide dd { font-size: 14px; font-weight: 400; color: var(--text-2); }
+.table-scroll { overflow-x: auto; }
+.table-scroll .data { min-width: 760px; }
+
+.statusbar { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0 0 20px; padding: 4px; width: max-content; max-width: 100%;
              background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
              box-shadow: var(--shadow-xs); }
 .statusbar li { padding: 7px 14px; border-radius: var(--radius-sm); color: var(--text-3); font-weight: 500; white-space: nowrap; }
@@ -664,6 +677,9 @@ pre.block { margin: 0; white-space: pre-wrap; word-break: break-word; font: 13px
   .data td:empty { display: none; }
   .data .clip { max-width: none; white-space: normal; }
   .data tr[data-href]:hover td { background: none; }
+  .table-scroll .data { min-width: 0; }
+  .field-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; padding: 14px 16px 16px; }
+  .field-tile { padding: 10px 12px; }
 }
 
 @media (max-width: 760px) {
