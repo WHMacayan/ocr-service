@@ -765,6 +765,198 @@ pre.block { margin: 0; white-space: pre-wrap; word-break: break-word; font: 13px
   .toasts { top: 12px; right: 12px; }
 }
 
+/* ══ Odoo 20 ("Frost") look ════════════════════════════════════════════════════════════════════
+   Odoo's plum for main buttons, teal for links and the current status, light grey ground,
+   white record sheets with soft borders, a top bar with menus, a control-panel page header,
+   arrow status bars, and form fields underlined rather than boxed. */
+
+:root {
+  --o-plum: #714B67; --o-plum-hover: #624159; --o-teal: #017E84;
+  --bg: #F6F7F9; --surface: #FFFFFF; --surface-2: #F9FAFB; --surface-3: #EEF0F3;
+  --border: #DEE2E6; --border-soft: #EBEDF0; --border-strong: #CED4DA;
+  --text: #1F2937; --text-2: #4B5563; --text-3: #6B7280;
+  --accent: #714B67; --accent-hover: #624159; --accent-soft: #E6F2F3; --accent-text: #017E84;
+  --ring: 0 0 0 3px rgba(1, 126, 132, .22);
+  --radius: 8px; --radius-sm: 6px;
+  --nav-h: 46px;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  --mono: SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --shadow-xs: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --o-plum: #8F6A87; --o-plum-hover: #A27C99; --o-teal: #3DBDC4;
+    --bg: #1B1D24; --surface: #24262F; --surface-2: #2A2D37; --surface-3: #30333E;
+    --border: #3A3D4A; --border-soft: #31343F; --border-strong: #4A4E5C;
+    --text: #E6E7EB; --text-2: #B6B9C3; --text-3: #9095A3;
+    --accent: #8F6A87; --accent-hover: #A27C99; --accent-soft: rgba(61, 189, 196, .14); --accent-text: #5CCDD3;
+    --inverse-bg: #E6E7EB; --inverse-text: #1B1D24;
+  }
+}
+:root[data-theme="dark"] {
+  --o-plum: #8F6A87; --o-plum-hover: #A27C99; --o-teal: #3DBDC4;
+  --bg: #1B1D24; --surface: #24262F; --surface-2: #2A2D37; --surface-3: #30333E;
+  --border: #3A3D4A; --border-soft: #31343F; --border-strong: #4A4E5C;
+  --text: #E6E7EB; --text-2: #B6B9C3; --text-3: #9095A3;
+  --accent: #8F6A87; --accent-hover: #A27C99; --accent-soft: rgba(61, 189, 196, .14); --accent-text: #5CCDD3;
+  --inverse-bg: #E6E7EB; --inverse-text: #1B1D24;
+}
+body { font-size: 13.5px; font-feature-settings: normal; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* shell: top bar over the page */
+.shell { display: flex; flex-direction: column; min-height: 100dvh; }
+.main { flex: 1; }
+.main.is-split, .main.is-fill { height: calc(100dvh - var(--nav-h)); }
+
+.o-navbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 4px; height: var(--nav-h);
+            padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.o-brand { display: inline-flex; align-items: center; gap: 8px; padding: 0 10px 0 4px; margin-right: 6px; font-size: 15px;
+           font-weight: 600; color: var(--text); text-decoration: none; white-space: nowrap; }
+.o-brand-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; background: var(--o-plum); color: #fff; }
+.o-brand-mark svg { width: 16px; height: 16px; }
+.o-menus { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.o-menus > a, .o-dropdown > summary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
+           border-radius: 6px; color: var(--text-2); font-weight: 500; text-decoration: none; cursor: pointer;
+           white-space: nowrap; list-style: none; }
+.o-dropdown > summary::-webkit-details-marker { display: none; }
+.o-menus > a:hover, .o-dropdown > summary:hover { background: var(--surface-3); color: var(--text); }
+.o-menus > a[aria-current="page"], .o-dropdown > summary[aria-current="page"] { color: var(--text); background: var(--surface-3); }
+.o-menus .o-dropdown > summary::after { content: ""; width: 0; height: 0; border: 4px solid transparent;
+           border-top-color: currentColor; margin-top: 4px; }
+.o-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: #D9534F; color: #fff;
+           font-size: 11px; font-weight: 600; display: inline-grid; place-items: center; }
+.o-dropdown { position: relative; }
+.o-dropdown-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; min-width: 200px; padding: 6px;
+                   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                   box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+.o-dropdown-menu.right { left: auto; right: 0; }
+.o-dropdown-menu a, .o-dropdown-menu button { display: block; width: 100%; padding: 7px 12px; border: 0; border-radius: 5px;
+                   background: none; color: var(--text); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.o-dropdown-menu a:hover, .o-dropdown-menu button:hover { background: var(--surface-3); }
+.o-dropdown-menu form { margin: 0; }
+.o-dropdown-head { padding: 6px 12px 8px; font-size: 12px; color: var(--text-3); border-bottom: 1px solid var(--border-soft); margin-bottom: 4px; }
+.o-systray { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.o-nav-btn { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 6px; background: none;
+             color: var(--text-2); cursor: pointer; }
+.o-nav-btn:hover { background: var(--surface-3); color: var(--text); }
+.o-nav-btn svg { width: 18px; height: 18px; }
+.o-user > summary { padding: 0 4px; }
+.o-avatar { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--o-teal);
+            color: #fff; font-weight: 600; font-size: 13px; }
+.o-burger { display: none; }
+
+/* The Odoo being written to: a slim strip under the top bar. */
+.env-bar { margin: 0 -40px 0; border-radius: 0; border-width: 0 0 1px; padding: 5px 40px; font-size: 12.5px; }
+.main.is-split .env-bar { padding: 5px 16px; }
+
+/* control panel: the page header */
+.page-head { align-items: center; margin: 0 0 16px; padding: 14px 0 12px; border-bottom: 1px solid var(--border-soft); }
+.page-head > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.page-head h1 { font-size: 19px; font-weight: 600; letter-spacing: 0; }
+.page-head p { flex: 0 0 100%; max-width: none; margin: 2px 0 0; font-size: 12.5px; color: var(--text-3); }
+.table-card .empty { padding: 20px; }
+.table-card .empty p { margin: 0; color: var(--text-3); }
+.crumbs { margin: 0; font-size: 19px; gap: 8px; color: var(--accent-text); }
+.crumbs a { color: var(--accent-text); }
+.crumbs a:hover { text-decoration: underline; color: var(--accent-text); }
+.crumbs svg { display: none; }
+.crumbs > a::after { content: "/"; margin-left: 8px; color: var(--text-3); }
+.crumbs > span:last-child { display: none; }
+.title-line { gap: 10px; }
+.pane-head { padding: 12px 14px 10px; }
+.pane-title h1 { font-size: 19px; }
+
+/* buttons: Odoo's primary plum and light secondary */
+.btn { height: 32px; padding: 0 12px; border-radius: 6px; font-weight: 500; font-size: 13.5px; }
+.btn.secondary { background: var(--surface-3); border-color: var(--surface-3); color: var(--text); }
+.btn.secondary:hover { background: var(--border); border-color: var(--border); }
+.btn.sm { height: 28px; padding: 0 10px; }
+
+/* cards are Odoo sheets: white, soft border, no shadow */
+.card, .o-sheet { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: none; }
+.card-head { padding: 14px 20px; }
+.card-head h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.card-body { padding: 18px 20px; }
+.o-sheet { padding: 24px 28px 28px; }
+.o-sheet > * + * { margin-top: 20px; }
+.o-sheet .detail-title h2 { font-size: 24px; font-weight: 600; }
+.o-sheet .rows, .o-sheet .thread, .o-sheet .fold, .o-sheet .card { border-radius: 6px; }
+
+/* form header: actions on the left, the status bar on the right */
+.o-form-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+                 padding: 8px 0 12px; }
+.o-statusbar, .statusbar { display: flex; list-style: none; margin: 0; padding: 0; background: none; border: 0;
+                           box-shadow: none; width: auto; gap: 0; }
+.statusbar { margin-bottom: 16px; }
+.o-statusbar li, .statusbar li { position: relative; display: grid; place-items: center; height: 30px; padding: 0 14px 0 22px;
+           margin-left: -6px; background: var(--surface-3); color: var(--text-3); font-size: 12.5px; font-weight: 500;
+           border-radius: 0; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%); }
+.o-statusbar li:first-child, .statusbar li:first-child { margin-left: 0; padding-left: 14px;
+           clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); border-radius: 6px 0 0 6px; }
+.o-statusbar li[aria-current="step"], .statusbar li[aria-current="step"] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.o-statusbar li.off-failed[aria-current] { background: var(--bad-soft); color: var(--bad); }
+.o-statusbar li.off-skipped[aria-current] { background: var(--surface-3); color: var(--text-2); }
+
+/* form fields: underlined like Odoo's, boxed only for long text */
+.input, .field input[type=text], .field input[type=password], .field input[type=number], .field input[type=date], .field select {
+  height: 34px; padding: 0 2px; border: 0; border-bottom: 1px solid var(--border-strong); border-radius: 0;
+  background-color: transparent; box-shadow: none; }
+.field select { padding-right: 28px; background-position: right 4px center; }
+.input:focus, .field input:focus, .field select:focus { border-bottom-color: var(--accent-text); box-shadow: 0 1px 0 var(--accent-text); }
+.field textarea { border-radius: 6px; }
+.field > label, .field > .label, .label-line label { font-weight: 600; font-size: 13px; }
+.secret-saved, .copy-line code { border-radius: 6px; }
+.form-grid { gap: 16px 32px; }
+
+/* lists: Odoo's dense list view */
+.data th { background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; padding: 9px 16px;
+           border-bottom: 1px solid var(--border); }
+.data td { padding: 8px 16px; color: var(--text); border-bottom: 1px solid var(--border-soft); }
+.data .sub { font-size: 12px; }
+.data tr[data-href]:hover td { background: var(--surface-2); }
+.mail-row { padding: 10px 14px; }
+.mail-row[aria-current="true"] { box-shadow: inset 3px 0 0 var(--accent-text); }
+.chips a[aria-current="true"] { background: var(--accent-soft); color: var(--accent-text); }
+
+/* label / value groups like an Odoo form: label in bold on the left, value beside it */
+.kv-card h2 { color: var(--text-2); }
+.kv-row { justify-content: flex-start; padding: 8px 20px; }
+.kv-row dt { flex: 0 0 38%; max-width: 38%; font-weight: 600; color: var(--text); }
+.kv-row dd { text-align: left; font-weight: 400; }
+
+/* badges: soft pills */
+.badge { height: 22px; font-size: 12px; border: 0; }
+.badge::before { display: none; }
+
+.toast { border-left: 4px solid var(--c-done); }
+.toast.error { border-left-color: var(--c-failed); }
+
+.detail { padding: 16px 28px 120px; max-width: 1040px; }
+.pane-detail { background: var(--bg); }
+
+@media (max-width: 1100px) {
+  .o-menus > a, .o-dropdown > summary { padding: 0 8px; }
+  .env-bar { margin: 0 -28px; padding: 5px 28px; }
+}
+@media (max-width: 900px) {
+  .env-bar { margin: 0 -16px; padding: 5px 16px; }
+  .o-sheet { padding: 16px; }
+  .o-statusbar li { padding: 0 10px 0 16px; }
+  .kv-row dt { flex-basis: 45%; max-width: 45%; }
+}
+@media (max-width: 860px) {
+  /* Menus fold into the burger, as in Odoo on a phone. */
+  .o-burger { display: grid; }
+  .o-menus { display: none; position: absolute; top: var(--nav-h); left: 0; right: 0; flex-direction: column; align-items: stretch;
+             padding: 8px; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+  body.menu-open .o-menus { display: flex; }
+  .o-menus > a, .o-dropdown > summary { height: 40px; }
+  .o-menus .o-dropdown-menu { position: static; box-shadow: none; border: 0; padding: 0 0 0 12px; }
+  .main.is-split, .main.is-fill { height: calc(100dvh - var(--nav-h)); }
+  .main { padding-bottom: 40px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

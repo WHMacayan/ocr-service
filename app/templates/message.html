@@ -8,16 +8,22 @@
   <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
   <div class="detail" id="email-detail" data-live>
     <a class="back-link" href="{{ url_for('web.messages', **filters) }}">{{ icon("back") }} Emails</a>
-    <header class="detail-head">
-      <div class="detail-meta">{{ message.mailbox_name }} · {{ message.sender }} · {{ message.received|when or "Received date unknown" }}</div>
-      <div class="detail-title">
-        <h2 id="detail-title" tabindex="-1">{{ message.subject or "No subject" }}</h2>
-        <span class="badge {{ message.state }}">{{ state_labels.get(message.state, message.state) }}</span>
-      </div>
+    <div class="o-form-header">
       <form class="actions" method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="btn {{ '' if message.state in ('failed', 'review') else 'secondary' }}">{{ icon("rotate") }} Process again</button>
       </form>
+      <ol class="o-statusbar" aria-label="State">
+        {% for s in route %}<li {% if message.state == s %}aria-current="step"{% endif %}>{{ state_labels[s] }}</li>{% endfor %}
+        {% if message.state in off_route %}<li aria-current="step" class="off-{{ message.state }}">{{ state_labels[message.state] }}</li>{% endif %}
+      </ol>
+    </div>
+    <div class="o-sheet">
+    <header class="detail-head">
+      <div class="detail-meta">{{ message.mailbox_name }} · {{ message.sender }} · {{ message.received|when or "Received date unknown" }}</div>
+      <div class="detail-title">
+        <h2 id="detail-title" tabindex="-1">{{ message.subject or "No subject" }}</h2>
+      </div>
     </header>
 
     {% if message.note %}
@@ -144,6 +150,7 @@
     {% if message.body_text %}
     <details class="block fold" id="email-text"><summary>Email text</summary><pre class="block">{{ message.body_text }}</pre></details>
     {% endif %}
+    </div>
   </div>
   </section>
 </div>

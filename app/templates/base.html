@@ -6,55 +6,52 @@
   <meta name="color-scheme" content="light dark">
   <title>{% if title %}{{ title }} · {% endif %}OCR Service</title>
   <script src="{{ url_for('static', filename='theme.js') }}?v=12"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=21">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=22">
 </head>
 <body>
 {% set here = request.path %}
 
 {% if session.signed_in %}
-{% macro item(href, name, label, current, primary=False) %}
-  <a class="rail-item" href="{{ href }}" {% if current %}aria-current="page"{% endif %} {% if primary %}data-primary{% endif %}>
-    {{ icon(name) }}<span class="rail-label">{{ label }}</span>{{ caller() if caller }}</a>
-{% endmacro %}
+{% set setup_here = here.startswith('/settings') or here.startswith('/connections') or here.startswith('/password')
+                    or forms.keys()|select("in", [here.split('/')[1]])|list %}
 <div class="shell">
-  <nav class="rail" id="rail" aria-label="Main">
-    <a class="rail-brand" href="{{ url_for('web.messages') }}" aria-label="OCR Service: emails">OCR</a>
-    <div class="rail-group">
-      {% call item(url_for('web.messages'), "inbox", "Emails", here.startswith('/messages'), True) %}
-        <span class="rail-count" id="rail-failed" data-live title="Failed emails" {% if not failed_count %}hidden{% endif %}>{{ failed_count }}</span>
-      {% endcall %}
-      {{ item(url_for('web.booking_list'), "file", "Bookings", here.startswith('/bookings'), True) }}
-      {{ item(url_for('web.scraped_bills'), "receipt", "Scraped bills", here.startswith('/scraped-bills')) }}
-      {{ item(url_for('web.customs_batches'), "landmark", "Customs", here.startswith('/customs'), True) }}
-      {{ item(url_for('web.activity'), "activity", "Activity", here.startswith('/activity'), True) }}
+  {# Odoo-style top bar: app switcher, app name, menus; search, theme and the user on the right. #}
+  <nav class="o-navbar" id="rail" aria-label="Main">
+    <button class="o-nav-btn o-burger" type="button" data-menu aria-controls="o-menus" aria-expanded="false" aria-label="Menu">{{ icon("menu") }}</button>
+    <a class="o-brand" href="{{ url_for('web.messages') }}"><span class="o-brand-mark">{{ icon("scan") }}</span>OCR Service</a>
+    <div class="o-menus" id="o-menus">
+      <a href="{{ url_for('web.messages') }}" {% if here.startswith('/messages') %}aria-current="page"{% endif %}>Emails
+        <span class="o-count" id="rail-failed" data-live title="Failed emails" {% if not failed_count %}hidden{% endif %}>{{ failed_count }}</span></a>
+      <a href="{{ url_for('web.booking_list') }}" {% if here.startswith('/bookings') %}aria-current="page"{% endif %}>Bookings</a>
+      <a href="{{ url_for('web.scraped_bills') }}" {% if here.startswith('/scraped-bills') %}aria-current="page"{% endif %}>Scraped bills</a>
+      <a href="{{ url_for('web.customs_batches') }}" {% if here.startswith('/customs') %}aria-current="page"{% endif %}>Customs</a>
+      <a href="{{ url_for('web.activity') }}" {% if here.startswith('/activity') %}aria-current="page"{% endif %}>Activity</a>
+      <details class="o-dropdown">
+        <summary {% if setup_here %}aria-current="page"{% endif %}>Configuration</summary>
+        <div class="o-dropdown-menu">
+          {% for key, f in forms.items() %}<a href="{{ url_for('web.records', key=key) }}">{{ f.title }}</a>{% endfor %}
+          <a href="{{ url_for('web.settings') }}">Settings</a>
+        </div>
+      </details>
     </div>
-    <div class="rail-group">
-      <span class="rail-heading">Setup</span>
-      {% for key, f in forms.items() %}
-      {{ item(url_for('web.records', key=key), {"mailboxes": "mail", "vendor-mappings": "users", "subject-formats": "type"}[key], f.title, here.startswith('/' ~ key)) }}
-      {% endfor %}
-      {{ item(url_for('web.settings'), "sliders", "Settings", here.startswith('/settings') or here.startswith('/connections')) }}
-    </div>
-    <div class="rail-group rail-foot">
-      <button class="rail-item" type="button" data-search-open>{{ icon("search") }}<span class="rail-label">Search <kbd>Ctrl K</kbd></span></button>
-      <button class="rail-item" type="button" data-theme-toggle>
+    <div class="o-systray">
+      <button class="o-nav-btn" type="button" data-search-open aria-label="Search (Ctrl K)" title="Search (Ctrl K)">{{ icon("search") }}</button>
+      <button class="o-nav-btn" type="button" data-theme-toggle>
         <span class="theme-icon" data-theme-icon="system">{{ icon("monitor") }}</span>
         <span class="theme-icon" data-theme-icon="light">{{ icon("sun") }}</span>
         <span class="theme-icon" data-theme-icon="dark">{{ icon("moon") }}</span>
-        <span class="rail-label" data-theme-label>Theme: match Windows</span></button>
-      {{ item(url_for('web.change_password'), "key", "Change password", here.startswith('/password')) }}
-      <form method="post" action="{{ url_for('web.logout') }}" data-full>
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button class="rail-item">{{ icon("logout") }}<span class="rail-label">Log out</span></button>
-      </form>
+        <span class="visually-hidden" data-theme-label>Theme: match Windows</span></button>
+      <details class="o-dropdown o-user">
+        <summary aria-label="Account"><span class="o-avatar">A</span></summary>
+        <div class="o-dropdown-menu right">
+          <span class="o-dropdown-head">Admin</span>
+          <a href="{{ url_for('web.change_password') }}">Change password</a>
+          <form method="post" action="{{ url_for('web.logout') }}" data-full>
+            <input type="hidden" name="csrf" value="{{ csrf }}"><button>Log out</button></form>
+        </div>
+      </details>
     </div>
-    <button class="rail-item rail-more" type="button" data-menu aria-controls="rail" aria-expanded="false">
-      {{ icon("more") }}<span class="rail-label">More</span></button>
   </nav>
-  <div class="scrim" data-menu-close></div>
 
   <main class="main {{ 'is-split' if split else '' }} {{ 'is-fill' if fill else '' }}" id="main">
     {% set production_on = connections_on|selectattr("is_production")|list %}
@@ -107,6 +104,6 @@
   {% endfor %}
 </div>
 
-<script src="{{ url_for('static', filename='app.js') }}?v=13"></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=14"></script>
 </body>
 </html>

@@ -434,6 +434,7 @@ function syncTheme() {
   const theme = currentTheme();
   document.querySelectorAll("[data-theme-icon]").forEach(i => { i.hidden = i.dataset.themeIcon !== theme; });
   document.querySelectorAll("[data-theme-label]").forEach(l => { l.textContent = THEMES[theme]; });
+  document.querySelectorAll("[data-theme-toggle]").forEach(b => { b.title = THEMES[theme]; });
 }
 document.addEventListener("click", e => {
   if (e.target.closest("[data-menu]")) setMenu(!document.body.classList.contains("menu-open"));
@@ -451,8 +452,16 @@ document.addEventListener("click", e => {
   }
   if (e.target.closest("[data-search-open]")) openPalette();
   if (!e.target.closest(".tip")) document.querySelectorAll(".tip.open").forEach(t => t.classList.remove("open"));
+  // Top-bar menus close on a click anywhere else, or on choosing an entry.
+  document.querySelectorAll("details.o-dropdown[open]").forEach(d => {
+    if (!d.contains(e.target) || e.target.closest(".o-dropdown-menu a")) d.open = false;
+  });
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  setMenu(false);
+  document.querySelectorAll("details.o-dropdown[open]").forEach(d => { d.open = false; });
+});
 
 // ── search everything: Ctrl+K or / opens it; results arrive as you type ───────────────────────
 
