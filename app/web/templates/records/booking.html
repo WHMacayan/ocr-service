@@ -1,6 +1,6 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
-{% from "_ui.html" import control_panel, field_group, group_title, notebook, emails_rows, statusbar with context %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel, field_group, group_title, notebook, emails_rows, statusbar with context %}
 {% block content %}
 {% set number = (odoo_row or {}).get("booking_number") or (written.get("booking_number") or {}).get("value") or "#" ~ booking_id %}
 {% call control_panel(number, crumbs=[("Bookings", url_for('web.booking_list'))], badges=[] if steps else [("", state_label)]) %}

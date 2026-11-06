@@ -42,7 +42,7 @@ def booking_list():
                      "emails": emails_per.get(booking_id, 0), "missing_in_odoo": bool(odoo_rows) and theirs is None,
                      **{f"{f}_shown": booking_compare.shown((theirs or {}).get(f), info.get(f))
                         for f in ("state", "factory_id", "forwarder_id", "etd", "eta", "port_of_loading", "port_of_discharge")}})
-    return render_template("bookings.html", title="Bookings", rows=rows, error=error, pager=page)
+    return render_template("records/bookings.html", title="Bookings", rows=rows, error=error, pager=page)
 
 
 @bp.route("/bookings/<int:booking_id>")
@@ -63,7 +63,7 @@ def booking(booking_id):
     steps = [(label, value == current) for value, label in (info.get("state") or {}).get("selection") or []]
     odoo_url = reference_url()
     return render_template(
-        "booking.html", title=f"Booking {(odoo_row or {}).get('booking_number') or booking_id}", booking_id=booking_id,
+        "records/booking.html", title=f"Booking {(odoo_row or {}).get('booking_number') or booking_id}", booking_id=booking_id,
         odoo_row=odoo_row, info=info, sections=sections, written=written, children=children, emails=feeding,
         made_by_service=booking_compare.created_children(g.db, booking_id), error=error, steps=steps,
         state_label=booking_compare.shown((odoo_row or {}).get("state"), info.get("state")),

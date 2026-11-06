@@ -1,10 +1,10 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
 {% set title = "Emails" %}
 {% set split = true %}
 {% block content %}
 <div class="split">
-  {% include "_email_list.html" %}
+  {% include "emails/_email_list.html" %}
   <section class="pane pane-detail" id="detail" aria-label="Email">
     <div class="detail-empty">
       <div class="empty-icon">{{ icon("inbox") }}</div>

@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
 {% set fill = true %}
 {% block content %}
 {% set older_shown = pager.offset > 0 %}
@@ -7,7 +7,7 @@
 {% set kind_icons = {"settings": "sliders", "security": "key", "processing": "inbox", "odoo": "external"} %}
 {% set level_badges = {"error": ("failed", "Error"), "warning": ("review", "Warning")} %}
 
-{% from "_ui.html" import control_panel %}
+{% from "layout/_ui.html" import control_panel %}
 {{ control_panel("Activity", pager=pager,
                  search={"value": query, "placeholder": "Search the activity", "keep": {"kind": kind}},
                  intro="Who changed what, every sign-in, what the service processed and every record it wrote to Odoo. Kept for "

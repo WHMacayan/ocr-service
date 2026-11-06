@@ -19,7 +19,8 @@ from .worker import run_forever, run_once
 
 def create_app():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    app = Flask(__name__)
+    # The pages' templates and static files live beside them, under web/.
+    app = Flask(__name__, template_folder="web/templates", static_folder="web/static")
     db = store.connect()
     with db:
         db.execute("INSERT OR IGNORE INTO setting (key, value) VALUES ('web_secret', ?)",

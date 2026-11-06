@@ -1,8 +1,8 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
 {% set fill = true %}
 {% block content %}
-{% from "_ui.html" import control_panel %}
+{% from "layout/_ui.html" import control_panel %}
 {{ control_panel("Bookings", pager=pager, search={"filter": "#records", "placeholder": "Filter this page"} if rows else None,
                  intro="Every freight booking the service created or updated in Odoo. Open one to check what the service wrote, and from which email, against what Odoo holds now.") }}
 

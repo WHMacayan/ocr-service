@@ -26,7 +26,7 @@ def record_list(key):
 
 @bp.route("/<key>/")
 def records(key):
-    return render_template("list.html", key=key, form=_form(key))
+    return render_template("setup/list.html", key=key, form=_form(key))
 
 
 @bp.route("/<key>/new", methods=["GET", "POST"], defaults={"record_id": None})
@@ -75,7 +75,7 @@ def record(key, record_id):
             if form.table == "mailbox":
                 return redirect(url_for("web.record", key=key, record_id=record_id))
             return redirect(url_for("web.records", key=key))
-    return render_template("form.html", title=form.title, form=form, key=key, record_id=record_id,
+    return render_template("setup/form.html", title=form.title, form=form, key=key, record_id=record_id,
                            sections=sections(form.fields, form.groups), record=current,
                            hints=secret_hints(form.fields, current), options=options,
                            action=request.path, extra="mailbox" if form.table == "mailbox" else None,
@@ -204,4 +204,4 @@ def runs(mailbox_id):
     mailbox = store.mailbox(g.db, mailbox_id) or abort(404)
     rows = g.db.execute("SELECT * FROM run WHERE mailbox_id = ? ORDER BY id DESC LIMIT 20",
                         (mailbox_id,)).fetchall()
-    return render_template("runs.html", mailbox=mailbox, runs=rows, key="mailboxes", record_id=mailbox_id)
+    return render_template("setup/runs.html", mailbox=mailbox, runs=rows, key="mailboxes", record_id=mailbox_id)

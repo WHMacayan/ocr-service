@@ -27,6 +27,6 @@ def activity():
     rows = g.db.execute(f"SELECT * FROM activity{sql_where} ORDER BY id DESC LIMIT ? OFFSET ?",
                         (*args, page["limit"], page["offset"])).fetchall()
     counts = dict(g.db.execute("SELECT kind, COUNT(*) FROM activity GROUP BY kind").fetchall())
-    return render_template("activity.html", title="Activity", rows=rows, kind=kind, query=query, pager=page,
+    return render_template("activity/activity.html", title="Activity", rows=rows, kind=kind, query=query, pager=page,
                            labels=ACTIVITY_LABELS, counts=counts, total=sum(counts.values()),
                            keep_days=store.get_setting(g.db, "activity_days"))

@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
 {% set title = form.title %}
 {% set split = true %}
 {% block content %}
@@ -9,7 +9,7 @@
   "subject-formats": "How booking and invoice numbers are read from email subject lines.",
 }[key] %}
 <div class="split">
-  {% include "_record_list.html" %}
+  {% include "setup/_record_list.html" %}
   <section class="pane pane-detail" id="detail" aria-label="{{ form.singular|capitalize }}">
     <div class="detail-empty">
       <div class="empty-icon">{{ icon({"mailboxes": "mail", "vendor-mappings": "users", "subject-formats": "type"}[key]) }}</div>

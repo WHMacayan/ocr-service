@@ -164,4 +164,4 @@ def search_page():
                 "groups": [{"key": key, "label": label, "more": more,
                             "items": [item._asdict() for item in items]} for key, label, items, more in groups]}
     groups = run(g.db, q, limit=50, state_labels=STATE_LABELS)
-    return render_template("search.html", title="Search", q=q, groups=groups, terms=parse(q).terms)
+    return render_template("search/search.html", title="Search", q=q, groups=groups, terms=parse(q).terms)

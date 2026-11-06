@@ -25,7 +25,7 @@ def _odoo_record(page, record_id, crumbs, purpose=None):
             error = str(exc)
     if not record and not error and not feeding:
         abort(404)
-    return render_template("odoo_record.html", title=(record or {}).get("title") or f"#{record_id}", record=record,
+    return render_template("records/odoo_record.html", title=(record or {}).get("title") or f"#{record_id}", record=record,
                            crumbs=crumbs, emails=feeding, error=error, odoo_link=_odoo_link(page["model"], record_id))
 
 
@@ -42,7 +42,7 @@ def _odoo_list(title, intro, model, ids, columns, endpoint, id_arg, empty, purpo
     counts = odoo_forms.email_counts(g.db, purpose) if purpose else {}
     for row in rows:
         row["emails"] = counts.get(row["id"], 0)
-    return render_template("odoo_list.html", title=title, intro=intro, heads=heads, rows=rows, endpoint=endpoint,
+    return render_template("records/odoo_list.html", title=title, intro=intro, heads=heads, rows=rows, endpoint=endpoint,
                            id_arg=id_arg, empty=empty, error=error, pager=page)
 
 

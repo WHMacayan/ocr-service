@@ -1,10 +1,10 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
 {% set title = message.subject or "Email" %}
 {% set split = true %}
 {% block content %}
 <div class="split has-detail">
-  {% include "_email_list.html" %}
+  {% include "emails/_email_list.html" %}
   <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
   <div class="detail" id="email-detail" data-live>
     <a class="back-link" href="{{ url_for('web.messages', **filters) }}">{{ icon("back") }} Emails</a>

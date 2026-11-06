@@ -1,11 +1,11 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
 {% macro tip(f) %}{% if f.tip %}<span class="tip">
   <button type="button" class="tip-btn" aria-label="What is {{ f.label }} for?" aria-describedby="tip-{{ f.name }}">{{ icon("info") }}</button>
   <span class="tip-text" role="tooltip" id="tip-{{ f.name }}">{{ f.tip }}</span></span>{% endif %}{% endmacro %}
 {% block content %}
 {% set is_new = not connection_id %}
-{% from "_ui.html" import control_panel %}
+{% from "layout/_ui.html" import control_panel %}
 {% call control_panel(record.name or "New Odoo connection", crumbs=[("Settings", url_for('web.settings'))],
                       badges=[("failed", "Production" if record.is_production else None),
                               ("ok" if record.active else "muted-badge",

@@ -29,7 +29,7 @@ def setup():
             sign_in()
             audit("security", "Admin password set on first start")
             return redirect(url_for("web.settings"))
-    return render_template("password.html", setup=True)
+    return render_template("auth/password.html", setup=True)
 
 
 # Failed logins per address: after MAX_FAILURES within LOCKOUT, that address waits LOCKOUT.
@@ -59,7 +59,7 @@ def login():
         if len(recent) >= MAX_FAILURES:
             minutes = int((LOCKOUT - (now - recent[0])).total_seconds() // 60) + 1
             flash(f"Too many wrong passwords. Try again in {minutes} minutes.", "error")
-            return render_template("password.html", setup=False), 429
+            return render_template("auth/password.html", setup=False), 429
         stored = store.get_setting(g.db, "admin_password_hash")
         if stored and check_password_hash(stored, request.form.get("password", "")):
             _failures.pop(address, None)
@@ -73,7 +73,7 @@ def login():
         else:
             audit("security", "Wrong password", level="warning")
         flash("Wrong password.", "error")
-    return render_template("password.html", setup=False)
+    return render_template("auth/password.html", setup=False)
 
 
 @bp.route("/password", methods=["GET", "POST"])
@@ -94,7 +94,7 @@ def change_password():
             audit("security", "Password changed; every other browser signed out")
             flash("Password changed. Other browsers are signed out.")
             return redirect(url_for("web.settings"))
-    return render_template("change_password.html", title="Change password")
+    return render_template("auth/change_password.html", title="Change password")
 
 
 @bp.route("/logout", methods=["POST"])

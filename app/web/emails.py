@@ -42,7 +42,7 @@ def email_list():
 @bp.route("/messages")
 def messages():
     mailboxes = g.db.execute("SELECT COUNT(*) FROM mailbox").fetchone()[0]
-    return render_template("messages.html", mailboxes=mailboxes, **email_list())
+    return render_template("emails/messages.html", mailboxes=mailboxes, **email_list())
 
 
 # The Odoo records an email is shown with; changes to their lines (containers, conflicts…) are in its detail.
@@ -96,7 +96,7 @@ def message(message_id):
         f"WHERE t.message_id IS NOT NULL OR (o.active = 1 AND COALESCE(?, '') >= COALESCE(o.start_from, '') "
         f"AND ? != 'skipped') ORDER BY {store.CONNECTION_ORDER}",
         (message_id, row["received"], row["state"])).fetchall()
-    return render_template("message.html", message=row, files=files, changes=changes, model_names=MODEL_NAMES,
+    return render_template("emails/message.html", message=row, files=files, changes=changes, model_names=MODEL_NAMES,
                            written=odoo_records([message_id]).get(message_id), targets=targets,
                            thread=conversation(row), current_id=message_id, **email_list())
 

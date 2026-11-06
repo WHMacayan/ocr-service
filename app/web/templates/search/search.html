@@ -1,9 +1,9 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
 {% block content %}
 {% set group_icons = {"emails": "inbox", "mailboxes": "mail", "vendors": "users", "formats": "type",
                       "settings": "sliders", "activity": "activity", "pages": "chevron"} %}
-{% from "_ui.html" import control_panel %}
+{% from "layout/_ui.html" import control_panel %}
 {{ control_panel("Search", search={"value": q, "placeholder": "Booking number, container, sender, vendor…"},
                  intro="Emails (with the text read from their files), mailboxes, vendor mappings, subject formats, settings and the activity log.") }}
 <p class="search-help">Every word must match. Use <code>"quotes"</code> for a phrase, and narrow emails with

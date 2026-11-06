@@ -33,7 +33,7 @@ def settings():
             flash("Settings saved.")
             return redirect(url_for("web.settings"))
     current = {f.name: store.get_setting(g.db, f.name) for f in SETTING_FIELDS}
-    return render_template("form.html", title="Settings", sections=sections(SETTING_FIELDS, SETTING_GROUPS),
+    return render_template("setup/form.html", title="Settings", sections=sections(SETTING_FIELDS, SETTING_GROUPS),
                            record=current, hints=secret_hints(SETTING_FIELDS, current), options={},
                            action=url_for("web.settings"), extra="settings",
                            connections=store.connections(g.db), reference=store.reference_connection(g.db))

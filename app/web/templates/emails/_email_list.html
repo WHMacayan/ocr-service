@@ -1,4 +1,4 @@
-{% from "_icons.html" import icon %}
+{% from "layout/_icons.html" import icon %}
 {% set search_terms = q and q.split() or [] %}
 {# The list beside every Emails page. Kept in place when an email opens beside it (data-list-key). #}
 <section class="pane pane-list" aria-label="Email list" data-list-key="emails {{ state or '' }} {{ q }}">

@@ -1,6 +1,6 @@
-{% extends "base.html" %}
-{% from "_icons.html" import icon %}
-{% from "_ui.html" import control_panel, field_group, notebook, emails_rows, statusbar with context %}
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel, field_group, notebook, emails_rows, statusbar with context %}
 {% block content %}
 {% call control_panel(title, crumbs=crumbs, intro=record.subtitle if record else None) %}
   <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>

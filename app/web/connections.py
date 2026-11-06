@@ -130,7 +130,7 @@ def connection(connection_id):
             else:
                 flash("Connection saved.")
             return redirect(link)
-    return render_template("connection.html", title="Odoo connection", connection_id=connection_id, record=current,
+    return render_template("settings/connection.html", title="Odoo connection", connection_id=connection_id, record=current,
                            fields=CONNECTION_FIELDS, hints=secret_hints(CONNECTION_FIELDS, current),
                            complete=store.is_complete(current))
 
@@ -163,7 +163,7 @@ def connection_on(connection_id):
             set_connection_on(connection, True, f"{start} 00:00:00")
             flash(f"{connection['name']} is on. It gets mail received from {start}.")
             return redirect(url_for("web.settings"))
-    return render_template("connection_on.html", title=f"Turn on {connection['name']}", connection=connection,
+    return render_template("settings/connection_on.html", title=f"Turn on {connection['name']}", connection=connection,
                            problems=problems, start=start, mapped=mapping_check.mapped_ids(g.db),
                            reference=store.reference_connection(g.db))
 
