@@ -807,7 +807,12 @@ body { font-size: 13.5px; font-feature-settings: normal; }
 /* shell: top bar over the page */
 .shell { display: flex; flex-direction: column; min-height: 100dvh; }
 .main { flex: 1; }
-.main.is-split, .main.is-fill { height: calc(100dvh - var(--nav-h)); }
+/* Split and list pages fit the window exactly; their panes scroll, never the page.
+   (flex: none and min-height: 0 so the page area cannot grow to its content.) */
+.main.is-split, .main.is-fill { flex: none; min-height: 0; height: calc(100dvh - var(--nav-h)); }
+html:has(.main.is-split), html:has(.main.is-fill) { overflow: hidden; }
+.section-nav { top: calc(var(--nav-h) + 16px); }
+.settings-body > .card, #record-form > .card, [id^="section-"], #odoo-connections { scroll-margin-top: calc(var(--nav-h) + 16px); }
 
 .o-navbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 4px; height: var(--nav-h);
             padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
@@ -953,9 +958,16 @@ body { font-size: 13.5px; font-feature-settings: normal; }
   body.menu-open .o-menus { display: flex; }
   .o-menus > a, .o-dropdown > summary { height: 40px; }
   .o-menus .o-dropdown-menu { position: static; box-shadow: none; border: 0; padding: 0 0 0 12px; }
-  .main.is-split, .main.is-fill { height: calc(100dvh - var(--nav-h)); }
   .main { padding-bottom: 40px; }
 }
+@media (max-width: 900px) {
+  /* On a phone a list page scrolls as a whole, like any page. */
+  .main.is-fill { flex: 1; height: auto; }
+  html:has(.main.is-fill) { overflow: visible; }
+}
+/* A hidden tooltip takes no room, so one near the right edge cannot widen the page. */
+.tip-text { display: none; }
+.tip:hover .tip-text, .tip-btn:focus-visible + .tip-text, .tip.open .tip-text { display: block; animation: fade-in .15s ease-out; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
