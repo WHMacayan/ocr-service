@@ -27,9 +27,13 @@ def create_app():
     app.secret_key = store.get_setting(db, "web_secret")
     db.close()
     app.config.update(
+        # Its own name: browsers share cookies across ports, so another local app's "session"
+        # cookie would otherwise replace this one and sign you out.
+        SESSION_COOKIE_NAME="ocr_session",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+        # Signed in for a week from the last visit (each visit renews it).
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
         MAX_CONTENT_LENGTH=1024 * 1024,
     )
     app.register_blueprint(bp)

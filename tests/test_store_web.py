@@ -83,6 +83,13 @@ def test_times_are_marked_for_the_viewers_time_zone(client):
     assert '<time datetime="' in page and "(UTC)" not in page
 
 
+def test_the_login_has_its_own_cookie_and_lasts_a_week(client):
+    signed_in(client)
+    cookie = client.get_cookie("ocr_session")
+    assert cookie is not None and client.get_cookie("session") is None  # another local app's "session" can't clash
+    assert client.application.permanent_session_lifetime.days == 7
+
+
 def test_background_requests_keep_the_login_form_working(client):
     signed_in(client)
     client.post("/logout", data={"csrf": csrf(client, "/messages")})
