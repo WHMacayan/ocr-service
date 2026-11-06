@@ -1,8 +1,6 @@
 from app.web import search
-from app.core import store
 
-from fakes import connection, mailbox
-from test_store_web import client, signed_in  # noqa: F401  (fixtures)
+from fakes import connection, mailbox, signed_in
 
 
 def seed(db):

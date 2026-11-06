@@ -2,9 +2,7 @@
 
 import pytest
 
-from fakes import mailbox
-from test_pipeline_logic import FakeOdoo
-from test_store_web import client, signed_in  # noqa: F401 (client is a fixture)
+from fakes import FakeOdoo, mailbox, signed_in
 
 
 class Odoo(FakeOdoo):
@@ -87,3 +85,16 @@ def test_record_deleted_in_odoo_says_so(client, db, odoo):  # noqa: F811
     fed(db, "bill_matching", 999, "Invoice gone")
     signed_in(client)
     assert "no longer in Odoo" in client.get("/scraped-bills/999").get_data(as_text=True)
+
+
+def test_odoo_lists_ask_odoo_only_for_the_page_shown(client, db, monkeypatch):
+    from app.web import odoo_forms
+    signed_in(client)
+    asked = []
+    monkeypatch.setattr("app.web.odoo_forms.record_ids", lambda db, purpose: set(range(1, 201)))
+    monkeypatch.setattr("app.web.odoo_forms.email_counts", lambda db, purpose: {})
+    monkeypatch.setattr("app.web.odoo_records._odoo_or_error", lambda: (object(), None))
+    monkeypatch.setattr(odoo_forms, "list_rows", lambda odoo, model, ids, columns: (
+        asked.append(sorted(ids)) or ([("name", "Name")], [{"id": i, "raw": {}, "name": f"B{i}"} for i in sorted(ids, reverse=True)])))
+    page = client.get("/scraped-bills?offset=80").get_data(as_text=True)
+    assert asked == [list(range(41, 121))] and 'value="81-160"' in page and "/ 200" in page

@@ -1,59 +1,9 @@
 """The pipeline from the service's own database to Odoo, with the AI stood in for."""
 
-import pytest
 
-from app.documents import extract
 from app.flows import pipeline
 from app.core import store
-from fakes import connection, mailbox
-from test_pipeline_logic import FakeOdoo
-
-CONFIRMATION = {"doc_class": "booking_confirmation", "booking_number": "AB123456", "vessel": "EVER GIVEN",
-                "master_bl": "HLCU123456789"}
-
-
-@pytest.fixture
-def ai(monkeypatch):
-    """Stand-in for the file reading: counts calls, answers from ``ai.answer``."""
-    class Reader:
-        calls = 0
-        answer = ("booking_confirmation", CONFIRMATION)
-
-        def __call__(self, raw, purpose, settings):
-            Reader.calls += 1
-            return self.answer
-    reader = Reader()
-    monkeypatch.setattr(extract, "read_file", reader)
-    return reader
-
-
-def odoo():
-    fake = FakeOdoo()
-    fake.rows("res.company")[1] = {"name": "Wholesale Tire Distributors", "partner_id": 1, "currency_id": 2}
-    fake.rows("res.currency")[2] = {"name": "USD", "rounding": 0.01}
-    return fake
-
-
-def email(db, tmp_path, purpose="freight_booking", subject="Booking AB123456", sender="ops@fwd.com",
-          received="2026-10-01 08:00:00", state="new"):
-    box = mailbox(db, purpose=purpose)
-    path = tmp_path / "doc.pdf"
-    path.write_bytes(b"%PDF-1.4 test")
-    with db:
-        message_id = db.execute(
-            "INSERT INTO message (mailbox_id, dedupe_key, subject, sender, received, body_html, state) "
-            "VALUES (?, ?, ?, ?, ?, '<p>See attached.</p>', ?)",
-            (box["id"], f"<{purpose}-{received}@x>", subject, sender, received, state)).lastrowid
-        db.execute("INSERT INTO file (message_id, filename, sha256, path) VALUES (?, 'doc.pdf', ?, ?)",
-                   (message_id, f"sha-{purpose}-{received}", str(path)))
-        if state != "new":  # already processed once in the connection
-            db.execute("INSERT INTO message_target (message_id, connection_id, state) VALUES (?, ?, ?)",
-                       (message_id, connection(db), state))
-    return message_id
-
-
-def row(db, table, row_id):
-    return db.execute(f"SELECT * FROM {table} WHERE id = ?", (row_id,)).fetchone()
+from fakes import connection, email, FakeOdoo, odoo, row
 
 
 def test_freight_email_becomes_a_booking(db, tmp_path, ai):

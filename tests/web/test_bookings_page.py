@@ -2,8 +2,7 @@ import json
 
 from app.web import booking_compare
 
-from fakes import mailbox
-from test_store_web import client, signed_in  # noqa: F401  (fixtures)
+from fakes import mailbox, signed_in
 
 
 class Odoo:

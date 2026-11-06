@@ -4,8 +4,7 @@ import pytest
 
 from app.flows import customs, pipeline
 from app.core import store
-from fakes import connection
-from test_pipeline_end_to_end import ai, email, odoo, row  # noqa: F401 (ai is a fixture)
+from fakes import connection, email, odoo, row
 
 FORM_7501 = ("DEPARTMENT OF HOMELAND SECURITY OMB CONTROL NUMBER 1651-0022\nU.S. Customs and Border Protection\n"
              "ENTRY SUMMARY\n1. Filer Code/Entry Number 2. Entry Type\n040-0496733-9 01 ABI/P 11/04/26\n"

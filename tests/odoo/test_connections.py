@@ -4,9 +4,7 @@ from app.flows import pipeline
 from app.core import store
 from app import worker
 from app.odoo.client import Odoo
-from fakes import connection, mailbox
-from test_pipeline_end_to_end import ai, email, odoo, row  # noqa: F401 (ai is a fixture)
-from test_store_web import client, csrf, signed_in  # noqa: F401 (client is a fixture)
+from fakes import connection, csrf, email, mailbox, odoo, row, signed_in
 
 
 def target(db, message_id, connection_id):

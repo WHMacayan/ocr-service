@@ -1,6 +1,7 @@
 """One booking per booking number and company, however the number is written."""
 
-from test_pipeline_logic import FakeOdoo, doc, make_booker
+from fakes import doc, FakeOdoo, make_booker
+
 
 
 def test_same_booking_number_in_another_spelling_updates_the_one_booking():

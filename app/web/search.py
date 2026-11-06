@@ -1,4 +1,4 @@
-﻿"""One search over everything the page shows: emails (with their files and what was read from
+"""One search over everything the page shows: emails (with their files and what was read from
 them), mailboxes, vendor mappings, subject formats, settings, the activity log and the pages.
 
 Query syntax: every word must match (in any field); "quoted words" match as a phrase;

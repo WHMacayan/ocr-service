@@ -1,4 +1,4 @@
-﻿"""Bookings: the service's record of each booking set against what Odoo holds now."""
+"""Bookings: the service's record of each booking set against what Odoo holds now."""
 
 from flask import abort, g, render_template
 
@@ -8,7 +8,7 @@ from .ui import pager
 from ..core import store
 
 
-# â”€â”€ bookings: the service's record against Odoo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── bookings: the service's record against Odoo ─────────────────────
 
 
 @bp.route("/bookings")
