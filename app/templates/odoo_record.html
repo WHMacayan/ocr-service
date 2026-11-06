@@ -1,88 +1,59 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_ui.html" import control_panel, field_group, group_title, emails_table, statusbar with context %}
 {% block content %}
-{% from "_ui.html" import control_panel %}
 {% call control_panel(title, crumbs=crumbs, intro=record.subtitle if record else None) %}
   <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
   <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
 {% endcall %}
 
 {% if error %}
-<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>
+<div class="callout warn">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>
 {% elif not record %}
-<div class="callout bad" style="margin-bottom:20px">{{ icon("alert") }}<span>This record is no longer in Odoo: it was deleted there.</span></div>
+<div class="callout bad">{{ icon("alert") }}<span>This record is no longer in Odoo: it was deleted there.</span></div>
 {% endif %}
 
 {% if record %}
-<ol class="statusbar" aria-label="Status">
-  {% for label, current in record.steps %}<li {% if current %}aria-current="step"{% endif %}>{{ label }}</li>{% endfor %}
-</ol>
-
+{{ statusbar(record.steps) }}
 {% for kind, text in record.alerts %}
-<div class="callout {{ kind }}" style="margin-bottom:20px">{{ icon("alert") }}<span style="white-space:pre-line">{{ text }}</span></div>
+<div class="callout {{ kind }}">{{ icon("alert") }}<span style="white-space:pre-line">{{ text }}</span></div>
 {% endfor %}
+{% endif %}
 
-{% macro field_card(title, fields) %}
-<section class="card kv-card">
-  <h2>{{ title }}</h2>
-  <dl class="kv">
-    {% for label, value in fields %}
-    {% set text = (value if value not in (none, false, "") else "–")|string %}
-    <div class="kv-row {{ 'long' if text|length > 40 or '\n' in text }}"><dt>{{ label }}</dt><dd>{{ text }}</dd></div>
-    {% endfor %}
-  </dl>
-</section>
-{% endmacro %}
-
-{# Field sections side by side in equal columns; tables full width below. #}
-<div class="kv-grid">
-  {% for section, fields in record.sections if fields %}{{ field_card(section, fields) }}{% endfor %}
-  {% for tab in record.tabs if tab.fields is defined and tab.fields %}{{ field_card(tab.title, tab.fields) }}{% endfor %}
-</div>
-
-{% for tab in record.tabs if tab.fields is not defined %}
-<section class="card table-card">
-  <div class="card-head"><div><h2>{{ tab.title }}</h2><p>{{ tab.rows|length }} in Odoo</p></div></div>
-  {% if tab.rows %}
-  <div class="table-scroll">
-  <table class="data">
-    <thead><tr>{% for c in tab.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-    <tbody>
-    {% for row in tab.rows %}
-    {% set href = url_for(tab.link, entry_id=row.id) if tab.link else None %}
-    <tr {% if href %}data-href="{{ href }}"{% endif %}>
-      {% for cell in row.cells %}
-      {% if loop.first %}<td class="cell-main">{% if href %}<a class="primary" href="{{ href }}">{{ cell or "–" }}</a>{% else %}<span class="primary">{{ cell or "–" }}</span>{% endif %}</td>
-      {% else %}<td data-label="{{ tab.columns[loop.index0] }}">{{ cell }}</td>{% endif %}
-      {% endfor %}
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+<div class="o-sheet o-record">
+  {% if record %}
+  <div class="o-groups">
+    {% for section, fields in record.sections if fields %}{{ field_group(section, fields) }}{% endfor %}
+    {% for tab in record.tabs if tab.fields is defined and tab.fields %}{{ field_group(tab.title, tab.fields) }}{% endfor %}
   </div>
-  {% else %}
-  <div class="empty"><p>None in Odoo.</p></div>
-  {% endif %}
-</section>
-{% endfor %}
-{% endif %}
 
-{% if emails %}
-<section class="card table-card">
-  <div class="card-head"><div><h2>Emails that fed this record</h2><p>Open an email to see its files and what was done with them.</p></div></div>
-  <table class="data">
-    <thead><tr><th>Email</th><th>Received</th><th>State</th></tr></thead>
-    <tbody>
-    {% for m in emails %}
-    {% set href = url_for('web.message', message_id=m.id) %}
-    <tr data-href="{{ href }}">
-      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ m.subject or "No subject" }}</a><span class="sub">{{ m.sender }}</span></td>
-      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
-      <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span></td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
+  {% for tab in record.tabs if tab.fields is not defined %}
+  <section class="o-group o-wide">
+    {{ group_title(tab.title, tab.rows|length ~ " in Odoo") }}
+    {% if tab.rows %}
+    <div class="table-scroll">
+    <table class="data">
+      <thead><tr>{% for c in tab.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for row in tab.rows %}
+      {% set href = url_for(tab.link, entry_id=row.id) if tab.link else None %}
+      <tr {% if href %}data-href="{{ href }}"{% endif %}>
+        {% for cell in row.cells %}
+        {% if loop.first %}<td class="cell-main">{% if href %}<a class="primary" href="{{ href }}">{{ cell or "–" }}</a>{% else %}<span class="primary">{{ cell or "–" }}</span>{% endif %}</td>
+        {% else %}<td data-label="{{ tab.columns[loop.index0] }}">{{ cell }}</td>{% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="faint">None in Odoo.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+  {% endif %}
+
+  {% if emails %}{{ emails_table(emails) }}{% endif %}
+</div>
 {% endblock %}

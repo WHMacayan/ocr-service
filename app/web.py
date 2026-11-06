@@ -1245,11 +1245,13 @@ def booking(booking_id):
         except Exception as exc:
             error = str(exc)
     sections = bookings.compare(info, odoo_row, written) if info else []
+    current = (odoo_row or {}).get("state")
+    steps = [(label, value == current) for value, label in (info.get("state") or {}).get("selection") or []]
     odoo_url = reference_url()
     return render_template(
         "booking.html", title=f"Booking {(odoo_row or {}).get('booking_number') or booking_id}", booking_id=booking_id,
         odoo_row=odoo_row, info=info, sections=sections, written=written, children=children, emails=feeding,
-        made_by_service=bookings.created_children(g.db, booking_id), error=error,
+        made_by_service=bookings.created_children(g.db, booking_id), error=error, steps=steps,
         state_label=bookings.shown((odoo_row or {}).get("state"), info.get("state")),
         odoo_link=f"{odoo_url}/web#model={bookings.BOOKING}&id={booking_id}&view_type=form",
         differs=sum(1 for _t, rows in sections for r in rows if r["state"] == "differs"))

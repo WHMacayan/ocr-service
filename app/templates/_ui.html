@@ -30,6 +30,51 @@
 </div>
 {%- endmacro %}
 
+{# A record page's parts, as an Odoo form: everything sits on one sheet; fields in label/value
+   groups side by side, each under a small heading; tables full width below. #}
+{% macro group_title(title, note=None) -%}
+<h2 class="o-group-title">{{ title }}{% if note %}<span>{{ note }}</span>{% endif %}</h2>
+{%- endmacro %}
+
+{% macro field_group(title, fields) -%}
+<section class="o-group">
+  {{ group_title(title) }}
+  <dl class="kv">
+    {%- for label, value in fields %}
+    {%- set text = (value if value not in (none, false, "") else "–")|string %}
+    <div class="kv-row {{ 'long' if text|length > 60 or '\n' in text }}"><dt>{{ label }}</dt><dd>{{ text }}</dd></div>
+    {%- endfor %}
+  </dl>
+</section>
+{%- endmacro %}
+
+{% macro emails_table(emails, title="Emails that fed this record") -%}
+<section class="o-group o-wide">
+  {{ group_title(title, emails|length ~ " email" ~ ("s" if emails|length != 1 else "")) }}
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Email</th><th>Received</th><th>State</th></tr></thead>
+    <tbody>
+    {%- for m in emails %}
+    {%- set href = url_for('web.message', message_id=m.id) %}
+    <tr data-href="{{ href }}">
+      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ m.subject or "No subject" }}</a><span class="sub">{{ m.sender }}</span></td>
+      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
+      <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span></td>
+    </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{%- endmacro %}
+
+{% macro statusbar(steps) -%}
+{%- if steps %}<ol class="statusbar" aria-label="Status">
+  {%- for label, current in steps %}<li {% if current %}aria-current="step"{% endif %}>{{ label }}</li>{% endfor %}
+</ol>{% endif %}
+{%- endmacro %}
+
 {# Odoo's pager: "1-80 / 374"; the range can be typed (1-200, then Enter); ‹ › turn the page. #}
 {% macro pager_nav(p) -%}
 <nav class="o-pager" aria-label="Pages">

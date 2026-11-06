@@ -1045,6 +1045,9 @@ body { font-size: 14px; }
 .o-crumb:hover { text-decoration: underline; }
 .o-crumb-sep { font-size: 20px; color: var(--text-3); }
 .o-cp-search .search { width: 100%; }
+/* No search on the page: the title gets the room. */
+.o-cp:not(:has(.o-cp-search .search)) { grid-template-columns: minmax(0, 1fr) auto; }
+.o-cp:not(:has(.o-cp-search .search)) .o-cp-search { display: none; }
 .o-cp-right { justify-content: flex-end; gap: 8px; }
 .o-cp-intro { grid-column: 1 / -1; margin: 0; font-size: 12.5px; color: var(--text-3); max-width: none; }
 .o-pager { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
@@ -1061,8 +1064,32 @@ body { font-size: 14px; }
 /* the same title size in the list panes as in page headers */
 .pane-title h1 { font-size: 20px; font-weight: 400; }
 @media (max-width: 900px) {
-  .o-cp { grid-template-columns: minmax(0, 1fr); }
+  .o-cp, .o-cp:not(:has(.o-cp-search .search)) { grid-template-columns: minmax(0, 1fr); }
   .o-cp-right { justify-content: flex-start; }
+}
+
+/* ── record pages (booking, scraped bill, customs batch and entry): one Odoo form sheet ───────── */
+.main > .statusbar { margin: 4px 0 14px; }
+.main > .callout { margin-bottom: 14px; }
+.o-record { padding: 24px 32px 32px; }
+.o-record > * + * { margin-top: 32px; }
+.o-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 28px 56px; align-items: start; }
+.o-group { min-width: 0; }
+.o-group-title { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; padding-bottom: 8px;
+                 border-bottom: 1px solid var(--border); font-size: 12.5px; font-weight: 600; letter-spacing: .05em;
+                 text-transform: uppercase; color: var(--text-2); }
+.o-group-title span { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-3); }
+.o-group .kv-row { padding: 6px 0; border: 0; }
+.o-group .kv-row dt { flex: 0 0 42%; max-width: 42%; }
+.o-group .kv-row.long { padding: 8px 0; }
+.o-group .data th:first-child, .o-group .data td:first-child { padding-left: 0; }
+.o-group .data th { background: transparent; }
+.o-group .data td, .o-group .data th { padding-top: 10px; padding-bottom: 10px; }
+.o-group > .faint { margin: 8px 0 0; }
+@media (max-width: 900px) {
+  .o-record { padding: 16px; }
+  .o-groups { grid-template-columns: minmax(0, 1fr); }
+  .o-group .data tr { padding-left: 0; padding-right: 0; }
 }
 
 /* A hidden tooltip takes no room, so one near the right edge cannot widen the page. */
