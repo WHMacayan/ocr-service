@@ -231,6 +231,32 @@ svg.icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: no
 .row-main .primary svg { width: 13px; height: 13px; vertical-align: -1px; color: var(--text-3); }
 .row-sub { font-size: 12.5px; color: var(--text-3); white-space: pre-line; overflow-wrap: anywhere; }
 .file-icon { display: grid; color: var(--text-3); }
+
+/* An email's conversation: a timeline, oldest first, with each mailbox's copy of every email. */
+.thread { list-style: none; margin: 0; padding: 4px 16px; background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius); max-height: 440px; overflow-y: auto; }
+.thread-node { position: relative; display: flex; gap: 14px; padding: 12px 0; }
+.thread-node::before { content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.thread-node:first-child::before { top: 18px; }
+.thread-node:last-child::before { bottom: calc(100% - 18px); }
+.thread-node:only-child::before { display: none; }
+.thread-dot { position: relative; z-index: 1; flex: none; width: 12px; height: 12px; margin-top: 4px; border-radius: 50%;
+              background: var(--surface); box-shadow: inset 0 0 0 2px var(--border-strong); }
+.thread-node.here .thread-dot { box-shadow: inset 0 0 0 3px var(--accent-text); }
+.thread-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.thread-top { display: flex; align-items: baseline; gap: 10px; }
+.thread-top b { font-weight: 500; }
+.thread-node.here .thread-top b { font-weight: 600; }
+.thread-top .faint { flex: none; margin-left: auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+.thread-copies { display: flex; flex-wrap: wrap; gap: 6px; }
+.copy-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 99px;
+             border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: 12.5px;
+             text-decoration: none; transition: border-color .12s, color .12s; }
+.copy-chip:hover { border-color: var(--accent-text); color: var(--accent-text); }
+.copy-chip[aria-current="true"] { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); font-weight: 500; }
+.copy-chip .state-dot { margin: 0; width: 7px; height: 7px; }
+.thread-count { margin-left: auto; padding: 0 7px; border-radius: 99px; background: var(--surface-3); color: var(--text-2);
+                font-size: 11.5px; white-space: nowrap; }
 .chip-line { margin-bottom: 10px; }
 .fold { padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .fold summary { cursor: pointer; font-weight: 600; }

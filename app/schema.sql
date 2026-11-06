@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS message (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS message_state ON message (state);
+CREATE INDEX IF NOT EXISTS message_conversation ON message (conversation_id);
+CREATE INDEX IF NOT EXISTS message_internet_id ON message (internet_message_id);
 
 CREATE TABLE IF NOT EXISTS file (
     id INTEGER PRIMARY KEY,

@@ -997,7 +997,8 @@ def email_list():
     if state in STATE_LABELS:
         where, args = f"{where} AND m.state = ?", (*args, state)
     rows = g.db.execute(
-        "SELECT m.*, b.name AS mailbox_name, (SELECT COUNT(*) FROM file f WHERE f.message_id = m.id) AS files "
+        "SELECT m.*, b.name AS mailbox_name, (SELECT COUNT(*) FROM file f WHERE f.message_id = m.id) AS files, "
+        "(SELECT COUNT(DISTINCT t.internet_message_id) FROM message t WHERE t.conversation_id = m.conversation_id) AS thread "
         f"FROM message m JOIN mailbox b ON b.id = m.mailbox_id WHERE {where} "
         "ORDER BY m.received DESC, m.id DESC LIMIT ? OFFSET ?", (*args, EMAILS_PAGE + 1, offset)).fetchall()
     shown = rows[:EMAILS_PAGE]
@@ -1240,7 +1241,27 @@ def message(message_id):
         (message_id, row["received"], row["state"])).fetchall()
     return render_template("message.html", message=row, files=files, changes=changes, model_names=MODEL_NAMES,
                            written=odoo_records([message_id]).get(message_id), targets=targets,
-                           current_id=message_id, **email_list())
+                           thread=conversation(row), current_id=message_id, **email_list())
+
+
+THREAD_LIMIT = 200
+
+
+def conversation(row):
+    """The email's whole Outlook conversation, oldest first: one entry per email, with every
+    mailbox's copy of it (the same email is read once by each mailbox it reaches)."""
+    rows = g.db.execute(
+        "SELECT m.id, m.subject, m.sender, m.received, m.state, m.internet_message_id, b.name AS mailbox_name "
+        "FROM message m JOIN mailbox b ON b.id = m.mailbox_id "
+        "WHERE (m.conversation_id = ? AND m.conversation_id != '') OR m.internet_message_id = ? OR m.id = ? "
+        "ORDER BY m.received, m.id LIMIT ?",
+        (row["conversation_id"], row["internet_message_id"] or None, row["id"], THREAD_LIMIT)).fetchall()
+    emails = {}
+    for r in rows:
+        key = r["internet_message_id"] or f"id:{r['id']}"
+        emails.setdefault(key, {"sender": r["sender"], "subject": r["subject"], "received": r["received"],
+                                "copies": []})["copies"].append(r)
+    return list(emails.values())
 
 
 @bp.route("/messages/<int:message_id>/retry", methods=["POST"])

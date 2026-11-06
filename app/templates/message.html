@@ -30,6 +30,34 @@
       <div><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
     </dl>
 
+    {% set copies = thread|sum(attribute="copies", start=[]) %}
+    {% if copies|length > 1 %}
+    {% set mailboxes = copies|map(attribute="mailbox_name")|unique|list %}
+    <section class="block">
+      <h3>Conversation</h3>
+      <p class="block-help">{{ thread|length }} email{{ "s" if thread|length != 1 }} in this thread, oldest first{% if mailboxes|length > 1 %}, read by {{ mailboxes[:-1]|join(", ") }} and {{ mailboxes[-1] }}{% endif %}. Open any copy to see what it did.</p>
+      <ol class="thread">
+        {% for email in thread %}
+        {% set here = email.copies|selectattr("id", "equalto", message.id)|list %}
+        <li class="thread-node {{ 'here' if here }}">
+          <span class="thread-dot"></span>
+          <div class="thread-body">
+            <div class="thread-top"><b class="clip-1">{{ email.sender or "Unknown sender" }}</b>
+              <span class="faint">{{ email.received|when(short=True) }}</span></div>
+            {% if email.subject != message.subject %}<div class="row-sub clip-1">{{ email.subject or "No subject" }}</div>{% endif %}
+            <div class="thread-copies">
+              {% for c in email.copies %}
+              <a class="copy-chip" href="{{ url_for('web.message', message_id=c.id, **filters) }}" {% if c.id == message.id %}aria-current="true"{% endif %}>
+                <span class="state-dot c-{{ c.state }}"></span>{{ c.mailbox_name }} · {{ state_labels.get(c.state, c.state) }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+
     {% if targets %}
     <section class="block">
       <h3>Per Odoo connection</h3>
