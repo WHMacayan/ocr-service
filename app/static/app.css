@@ -155,9 +155,8 @@ svg.icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: no
 .live-pill.paused span { background: var(--text-3); animation: none; }
 @keyframes pulse { 50% { opacity: .35; } }
 
-.chips { display: flex; gap: 4px; margin: 0 -4px; padding: 0 4px 2px; overflow-x: auto; scrollbar-width: none; }
-.chips::-webkit-scrollbar { display: none; }
-.chips a { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px;
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 -4px; padding: 0 4px; }
+.chips a { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 8px;
            font-size: 13px; font-weight: 500; color: var(--text-2); text-decoration: none; transition: background .12s, color .12s; }
 .chips a:hover { background: var(--surface-3); color: var(--text); }
 .chips a[aria-current="true"] { background: var(--inverse-bg); color: var(--inverse-text); }
