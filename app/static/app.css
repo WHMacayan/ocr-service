@@ -1092,6 +1092,22 @@ body { font-size: 14px; }
   .o-group .data tr { padding-left: 0; padding-right: 0; }
 }
 
+/* Odoo's notebook: tabs on a line, the chosen one joined to its page */
+.o-notebook { min-width: 0; }
+.o-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); }
+.o-tabs [role=tab] { display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; padding: 9px 16px;
+                     border: 1px solid transparent; border-radius: 6px 6px 0 0; background: none; color: var(--text-2);
+                     font: 500 14px var(--sans); cursor: pointer; }
+.o-tabs [role=tab]:hover { color: var(--text); background: var(--surface-2); }
+.o-tabs [role=tab][aria-selected="true"] { color: var(--text); background: var(--card);
+                     border-color: var(--border) var(--border) var(--card); }
+.o-tabs [role=tab]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; }
+.o-tabs .n { font-size: 12px; font-weight: 400; padding: 0 6px; border-radius: 99px; background: var(--surface-3); color: var(--text-2); }
+.o-tabpanel { padding-top: 6px; }
+.o-tabpanel > .faint { margin: 14px 0 0; }
+.o-tabpanel .data th:first-child, .o-tabpanel .data td:first-child { padding-left: 0; }
+.o-tabpanel .data th { background: transparent; }
+
 /* A hidden tooltip takes no room, so one near the right edge cannot widen the page. */
 .tip-text { display: none; }
 .tip:hover .tip-text, .tip-btn:focus-visible + .tip-text, .tip.open .tip-text { display: block; animation: fade-in .15s ease-out; }

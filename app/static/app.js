@@ -422,6 +422,33 @@ document.addEventListener("keydown", e => {
   typingTimer = setTimeout(() => visit(target.href), 120);
 });
 
+// ── notebooks: a record's child tables as tabs, one shown at a time ───────────────────────────
+
+function selectTab(tab) {
+  const book = tab.closest(".o-notebook");
+  book.querySelectorAll(":scope > .o-tabs [role=tab]").forEach(t => {
+    const on = t === tab;
+    t.setAttribute("aria-selected", on);
+    t.tabIndex = on ? 0 : -1;
+    document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+  });
+}
+document.addEventListener("click", e => {
+  const tab = e.target.closest(".o-tabs [role=tab]");
+  if (tab) selectTab(tab);
+});
+document.addEventListener("keydown", e => {
+  const tab = e.target.closest?.(".o-tabs [role=tab]");
+  if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+  const tabs = [...tab.parentElement.querySelectorAll("[role=tab]")];
+  const at = tabs.indexOf(tab);
+  const next = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: tabs.length - 1 }[e.key];
+  const target = tabs[(next + tabs.length) % tabs.length];
+  e.preventDefault();
+  selectTab(target);
+  target.focus();
+});
+
 // ── menu, theme ───────────────────────────────────────────────────────────────────────────────
 
 const setMenu = open => {

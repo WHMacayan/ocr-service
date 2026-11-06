@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% from "_ui.html" import control_panel, field_group, group_title, emails_table, statusbar with context %}
+{% from "_ui.html" import control_panel, field_group, group_title, notebook, emails_rows, statusbar with context %}
 {% block content %}
 {% set number = (odoo_row or {}).get("booking_number") or (written.get("booking_number") or {}).get("value") or "#" ~ booking_id %}
 {% call control_panel(number, crumbs=[("Bookings", url_for('web.booking_list'))], badges=[] if steps else [("", state_label)]) %}
@@ -63,9 +63,12 @@
                          "invoices": ("Factory invoices", "b2b.ocr.booking.invoice", ["invoice_number", "invoice_date", "amount", "currency_id"]),
                          "conflicts": ("Conflicts", "b2b.ocr.booking.conflict", ["field_label", "existing_value", "new_value", "state"]),
                          "changes": ("Container changes", "b2b.ocr.booking.container.change", ["new_container_lines", "state"])} %}
-  {% for kind, (title, model, cols) in child_titles.items() if children.get(kind) %}
-  <section class="o-group o-wide">
-    {{ group_title(title, children[kind]|length ~ " in Odoo") }}
+  {% set pages = [] %}
+  {% for kind, (title, model, cols) in child_titles.items() if children.get(kind) %}{% set _ = pages.append((kind, title, children[kind]|length)) %}{% endfor %}
+  {% set _ = pages.append(("emails", "Emails", emails|length)) %}
+  {% call(kind) notebook(pages) %}
+    {% if kind == "emails" %}{{ emails_rows(emails) }}
+    {% else %}{% set title, model, cols = child_titles[kind] %}
     <div class="table-scroll">
     <table class="data">
       <thead><tr>{% for c in cols %}<th>{{ c.replace("_id", "").replace("_", " ")|capitalize }}</th>{% endfor %}<th>From</th></tr></thead>
@@ -81,9 +84,7 @@
       </tbody>
     </table>
     </div>
-  </section>
-  {% endfor %}
-
-  {{ emails_table(emails, "Emails that fed this booking") }}
+    {% endif %}
+  {% endcall %}
 </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% from "_ui.html" import control_panel, field_group, group_title, emails_table, statusbar with context %}
+{% from "_ui.html" import control_panel, field_group, notebook, emails_rows, statusbar with context %}
 {% block content %}
 {% call control_panel(title, crumbs=crumbs, intro=record.subtitle if record else None) %}
   <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
@@ -27,9 +27,16 @@
     {% for tab in record.tabs if tab.fields is defined and tab.fields %}{{ field_group(tab.title, tab.fields) }}{% endfor %}
   </div>
 
-  {% for tab in record.tabs if tab.fields is not defined %}
-  <section class="o-group o-wide">
-    {{ group_title(tab.title, tab.rows|length ~ " in Odoo") }}
+  {% endif %}
+
+  {% set tables = (record.tabs if record else [])|rejectattr("fields", "defined")|list %}
+  {% set pages = [] %}
+  {% for tab in tables %}{% set _ = pages.append(("t" ~ loop.index, tab.title, tab.rows|length)) %}{% endfor %}
+  {% if emails %}{% set _ = pages.append(("emails", "Emails", emails|length)) %}{% endif %}
+  {% if pages %}
+  {% call(key) notebook(pages) %}
+    {% if key == "emails" %}{{ emails_rows(emails) }}
+    {% else %}{% set tab = tables[key[1:]|int - 1] %}
     {% if tab.rows %}
     <div class="table-scroll">
     <table class="data">
@@ -50,10 +57,8 @@
     {% else %}
     <p class="faint">None in Odoo.</p>
     {% endif %}
-  </section>
-  {% endfor %}
+    {% endif %}
+  {% endcall %}
   {% endif %}
-
-  {% if emails %}{{ emails_table(emails) }}{% endif %}
 </div>
 {% endblock %}
