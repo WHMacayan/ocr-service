@@ -8,8 +8,8 @@ confirming the bill or order found is a button in Odoo.
 
 import re
 
-from .booking import m2o_id, resolve_mapping
-from .text import normalize_identifier, parse_date, split_list
+from .freight import m2o_id, resolve_mapping
+from ..documents.text import normalize_identifier, parse_date, split_list
 
 SCRAPED_BILL = "b2b.ocr.scraped.bill"
 BILL_LINE = "b2b.ocr.scraped.bill.line"

@@ -5,7 +5,7 @@ import xmlrpc.client
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from . import store
+from ..core import store
 
 TIMEOUT_SECONDS = 120
 # Odoo stores datetimes as naive UTC in this format.

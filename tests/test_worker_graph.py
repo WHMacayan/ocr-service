@@ -2,8 +2,8 @@ from datetime import datetime
 
 import requests
 
-from app import store
-from app.graph import Graph
+from app.core import store
+from app.mail.graph import Graph
 from app.worker import is_due
 
 from fakes import mailbox

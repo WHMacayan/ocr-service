@@ -10,7 +10,7 @@ import base64
 import json
 import re
 
-from .text import file_text
+from ..documents.text import file_text
 
 BATCH = "cbp7501.audit.batch"
 ENTRY = "cbp7501.entry"

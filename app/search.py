@@ -9,7 +9,7 @@ vendors, formats, settings, activity, pages) keeps one kind of result.
 import re
 from collections import namedtuple
 
-from .settings import SETTINGS
+from .core.settings import SETTINGS
 
 # What the Odoo connections section of the Settings page is found by.
 CONNECTIONS_TEXT = "odoo connections address url database login user api key production staging development test"

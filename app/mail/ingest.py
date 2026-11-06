@@ -14,9 +14,9 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
-from . import store
+from ..core import store
 from .graph import GRAPH_BASE
-from .odoo import ODOO_DATETIME, utc_now
+from ..odoo.client import ODOO_DATETIME, utc_now
 
 _logger = logging.getLogger(__name__)
 

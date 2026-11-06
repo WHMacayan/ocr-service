@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from flask import Flask
 
-from . import store
+from .core import store
 from .web import bp
 from .worker import run_forever, run_once
 

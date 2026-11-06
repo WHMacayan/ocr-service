@@ -15,9 +15,12 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from markupsafe import Markup, escape
 
-from . import bookings, connections, graph, odoo_pages, search, store
-from .odoo import MODEL_NAMES, Odoo
-from .settings import SETTING_GROUPS, SETTINGS
+from . import bookings, odoo_pages, search
+from .odoo import mapping_check
+from .mail import graph
+from .core import store
+from .odoo.client import MODEL_NAMES, Odoo
+from .core.settings import SETTING_GROUPS, SETTINGS
 
 bp = Blueprint("web", __name__)
 
@@ -563,7 +566,7 @@ def check_connection(connection):
         except Exception as exc:
             return odoo, [f"{reference['name']} could not be reached to compare the mappings with: {exc}"]
     try:
-        problems = connections.check(g.db, odoo, connection["name"], reference_odoo,
+        problems = mapping_check.check(g.db, odoo, connection["name"], reference_odoo,
                                      reference["name"] if reference_odoo else None)
     except Exception as exc:
         problems = [f"The mappings could not be checked in {connection['name']}: {exc}"]
@@ -668,7 +671,7 @@ def connection_on(connection_id):
             flash(f"{connection['name']} is on. It gets mail received from {start}.")
             return redirect(url_for("web.settings"))
     return render_template("connection_on.html", title=f"Turn on {connection['name']}", connection=connection,
-                           problems=problems, start=start, mapped=connections.mapped_ids(g.db),
+                           problems=problems, start=start, mapped=mapping_check.mapped_ids(g.db),
                            reference=store.reference_connection(g.db))
 
 
@@ -708,7 +711,7 @@ def mapping_problems(form, values, options):
     wanted = {}
     for field in form.fields:
         if field.kind == "odoo" and values.get(field.name):
-            wanted.setdefault(connections.OPTION_MODELS[field.options], set()).add(values[field.name])
+            wanted.setdefault(mapping_check.OPTION_MODELS[field.options], set()).add(values[field.name])
     on = [c for c in store.connections(g.db, on=True) if store.is_complete(c)]
     if not wanted or not on:
         return []
@@ -722,7 +725,7 @@ def mapping_problems(form, values, options):
             continue
         if index == 0:
             reference_odoo = odoo
-        problems += connections.mismatches(
+        problems += mapping_check.mismatches(
             odoo, connection["name"], {m: sorted(ids) for m, ids in wanted.items()},
             None if index == 0 else reference_odoo, on[0]["name"])
     return problems

@@ -54,7 +54,7 @@ def test_printed_factory_wins_over_a_shared_sender_domain():
 
 def test_longest_printed_name_wins():
     from test_pipeline_logic import mapping
-    from app.booking import resolve_mapping
+    from app.flows.freight import resolve_mapping
     short = mapping(role="factory", document_name="SENTURY TIRE", partner_id=1)
     long = mapping(role="factory", document_name="SENTURY TIRE MOROCCO", partner_id=2)
     assert resolve_mapping([short, long], "factory", name="Sentury Tire Morocco SARL")["partner_id"] == 2

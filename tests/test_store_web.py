@@ -2,7 +2,8 @@ import re
 
 import pytest
 
-from app import create_app, store
+from app import create_app
+from app.core import store
 
 from fakes import mailbox
 
@@ -283,7 +284,7 @@ def test_activity_records_settings_security_and_hides_secrets(client, db):
 
 
 def test_odoo_writes_are_logged_with_a_link(db):
-    from app.odoo import Odoo
+    from app.odoo.client import Odoo
 
     class Server:
         def execute_kw(self, *args):
@@ -428,7 +429,7 @@ def test_clear_keeps_a_file_another_mailbox_still_uses(client, db, tmp_path):
 
 
 def test_odoo_writes_while_processing_an_email_are_recorded_against_it(client, db):
-    from app.odoo import Odoo
+    from app.odoo.client import Odoo
 
     class Server:
         def execute_kw(self, *args):

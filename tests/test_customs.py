@@ -2,7 +2,8 @@
 
 import pytest
 
-from app import customs, pipeline, store
+from app.flows import customs, pipeline
+from app.core import store
 from fakes import connection
 from test_pipeline_end_to_end import ai, email, odoo, row  # noqa: F401 (ai is a fixture)
 
@@ -75,7 +76,7 @@ def test_same_entry_number_again_and_other_pdfs_are_skipped(db, tmp_path, ai, te
 
 
 def test_sender_domain_filter_keeps_only_those_domains():
-    from app.ingest import filter_reason
+    from app.mail.ingest import filter_reason
     from fakes import message
     box = {"sender_domains": "tlius.com, example.org"}
     assert filter_reason(box, message(1, **{"from": {"emailAddress": {"address": "owen@TLIUS.com"}}})) is None

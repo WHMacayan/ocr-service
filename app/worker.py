@@ -4,11 +4,11 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-from . import store
-from .graph import Graph
-from .ingest import MailboxSync
-from .odoo import ODOO_DATETIME, Odoo, utc_now
-from .pipeline import process
+from .core import store
+from .mail.graph import Graph
+from .mail.ingest import MailboxSync
+from .odoo.client import ODOO_DATETIME, Odoo, utc_now
+from .flows.pipeline import process
 
 _logger = logging.getLogger(__name__)
 

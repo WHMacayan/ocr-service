@@ -9,7 +9,7 @@ linking or drafting the freight PO is a button in Odoo.
 import json
 import re
 
-from .text import find_labelled_booking_number, normalize_identifier, parse_date
+from ..documents.text import find_labelled_booking_number, normalize_identifier, parse_date
 
 BOOKING = "b2b.ocr.booking"
 CONTAINER = "b2b.ocr.booking.container"

@@ -2,7 +2,9 @@
 
 import pytest
 
-from app import extract, pipeline, store
+from app.documents import extract
+from app.flows import pipeline
+from app.core import store
 from fakes import connection, mailbox
 from test_pipeline_logic import FakeOdoo
 

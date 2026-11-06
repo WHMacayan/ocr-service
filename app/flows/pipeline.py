@@ -14,11 +14,12 @@ import json
 import logging
 from contextlib import nullcontext
 
-from . import extract, store
+from ..documents import extract
+from ..core import store
 from .bills import BillMatcher
-from .booking import Booker
+from .freight import Booker
 from .customs import CustomsUploader
-from .text import newest_message_text
+from ..documents.text import newest_message_text
 
 _logger = logging.getLogger(__name__)
 

@@ -2,10 +2,10 @@
 
 from datetime import date
 
-from app.bills import BillMatcher
-from app.booking import Booker
-from app.extract import checked, email_values
-from app.text import newest_message_text, normalize_identifier, parse_month_date
+from app.flows.bills import BillMatcher
+from app.flows.freight import Booker
+from app.documents.extract import checked, email_values
+from app.documents.text import newest_message_text, normalize_identifier, parse_month_date
 
 # One2many paths the domains below use: (model, field) -> (child model, inverse field).
 O2M = {

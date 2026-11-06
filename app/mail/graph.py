@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from .odoo import ODOO_DATETIME, utc_now
+from ..odoo.client import ODOO_DATETIME, utc_now
 
 _logger = logging.getLogger(__name__)
 

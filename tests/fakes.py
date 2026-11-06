@@ -2,7 +2,7 @@
 
 import base64
 
-from app import store
+from app.core import store
 
 PDF = b"%PDF-1.4 test document"
 
