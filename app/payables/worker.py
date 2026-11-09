@@ -10,6 +10,8 @@ import time
 from ..core import store
 from ..odoo.client import utc_now
 from ..worker import DEFAULT_POLL_SECONDS, PAYABLES, is_due
+from .graph import PayablesGraph
+from .ingest import PayablesSync
 
 _logger = logging.getLogger(__name__)
 
@@ -24,26 +26,21 @@ def connect():
 
 
 def _reader():
-    from ..mail.graph import Graph
-    from .ingest import PayablesSync
-    return PayablesSync, Graph
+    return PayablesSync, PayablesGraph
 
 
 def read_payables(db, now=None, sync_class=None):
     """One pass over the due Freight Payables mailboxes. A failing mailbox never stops the others."""
     now = now or utc_now()
-    mailboxes = [box for box in store.active_mailboxes(db) if box["purpose"] == PAYABLES and is_due(box, now)]
-    if not mailboxes:
-        return
-    if sync_class:
-        from ..mail.graph import Graph
-    else:
-        sync_class, Graph = _reader()
-    for mailbox in mailboxes:
+    default_sync, graph_class = _reader()
+    sync_class = sync_class or default_sync
+    for mailbox in store.active_mailboxes(db):
+        if mailbox["purpose"] != PAYABLES or not is_due(mailbox, now):
+            continue
         try:
             def save_tokens(values, mailbox_id=mailbox["id"]):
                 store.update_mailbox(db, mailbox_id, values)
-            sync_class(db, Graph(mailbox, save_tokens), mailbox).run()
+            sync_class(db, graph_class(mailbox, save_tokens), mailbox).run()
         except Exception:
             _logger.exception("Freight Payables mailbox %s (%s) failed", mailbox["id"], mailbox["name"])
 

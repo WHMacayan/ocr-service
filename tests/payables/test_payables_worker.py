@@ -55,6 +55,12 @@ def test_one_failing_mailbox_does_not_stop_the_others(db):
     assert steps == ["read Payables B"]
 
 
+def test_default_reader_is_the_payables_one():
+    from app.payables.graph import PayablesGraph
+    from app.payables.ingest import PayablesSync
+    assert payables_worker._reader() == (PayablesSync, PayablesGraph)
+
+
 def test_commands_registered(client):
     from app import create_app
     commands = create_app().cli.list_commands(None)
