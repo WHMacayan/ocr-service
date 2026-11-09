@@ -126,3 +126,16 @@ def test_clear_keeps_a_file_another_mailbox_still_uses(client, db, tmp_path):
 
     assert saved.exists()
     assert [r[0] for r in db.execute("SELECT sha256 FROM file")] == ["bill_matching:abc"]
+
+
+def test_setup_lists_group_by_a_choice(client, db):
+    signed_in(client)
+    with db:
+        db.executemany("INSERT INTO vendor_mapping (role, partner_name) VALUES (?, ?)",
+                       [("forwarder", "Maersk"), ("factory", "Sentury"), ("forwarder", "MSC")])
+    page = client.get("/vendor-mappings/?groupby=role").get_data(as_text=True)
+    assert page.index('<span class="clip">Factory</span><span class="n">1</span>') \
+        < page.index('<span class="clip">Forwarder</span><span class="n">2</span>')
+    assert 'href="/vendor-mappings/1?groupby=role"' in page
+    assert ">Odoo partner</a>" in page and ">Freight mode</a>" in page   # what the menu offers
+    assert 'data-group=' not in client.get("/vendor-mappings/").get_data(as_text=True)

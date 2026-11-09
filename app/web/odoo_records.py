@@ -4,7 +4,7 @@ from flask import abort, g, render_template, url_for
 
 from . import bp, odoo_forms
 from .base import _odoo_or_error, reference_url
-from .ui import pager
+from .ui import group_by, group_ids, group_list, group_rows, pager
 
 
 # ── scraped bills and customs: Odoo's records, as its forms show them ─
@@ -29,21 +29,51 @@ def _odoo_record(page, record_id, crumbs, purpose=None):
                            crumbs=crumbs, emails=feeding, error=error, odoo_link=_odoo_link(page["model"], record_id))
 
 
+# The kinds of Odoo field a list can be grouped on, as Odoo allows (amounts and counts are summed there instead).
+GROUPABLE = {"char", "selection", "many2one", "date", "boolean"}
+
+
 def _odoo_list(title, intro, model, ids, columns, endpoint, id_arg, empty, purpose=None):
     odoo, error = _odoo_or_error()
-    heads, rows = [], []
-    page = pager(len(ids))
-    shown = sorted(ids, reverse=True)[page["offset"]:page["offset"] + page["limit"]]  # newest first, Odoo asked for these only
-    if odoo and shown:
-        try:
-            heads, rows = odoo_forms.list_rows(odoo, model, set(shown), columns)
-        except Exception as exc:
-            error = str(exc)
+    heads, rows, info, page, groups = [], [], {}, None, []
     counts = odoo_forms.email_counts(g.db, purpose) if purpose else {}
-    for row in rows:
-        row["emails"] = counts.get(row["id"], 0)
-    return render_template("records/odoo_list.html", title=title, intro=intro, heads=heads, rows=rows, endpoint=endpoint,
-                           id_arg=id_arg, empty=empty, error=error, pager=page)
+
+    def read(some):
+        nonlocal heads
+        if not some:
+            return []
+        heads, found = odoo_forms.list_rows(odoo, model, set(some), columns)
+        for row in found:
+            row["emails"] = counts.get(row["id"], 0)
+        return found
+
+    try:
+        if odoo and ids:
+            info = odoo_forms.fields_info(odoo, model)
+    except Exception as exc:
+        error = str(exc)
+    heads = [(c, info[c]["string"]) for c in columns if c in info]
+    # Group By: the columns after the record's name that hold a name, a choice or a date.
+    options = {c: label for c, label in heads[1:] if info[c].get("type") in GROUPABLE}
+    groupby = group_by(options)
+    try:
+        if groupby:
+            # Every record under its group, as Odoo groups; Odoo is asked for the open group's rows only.
+            values = {r["id"]: odoo_forms.shown(r.get(groupby), info[groupby]) for r in odoo.call(
+                model, "search_read", [("id", "in", sorted(ids))], fields=[groupby], context={"active_test": False})}
+            members = group_ids({i: values.get(i) for i in ids})
+            groups = group_list({v: len(m) for v, m in members.items()},
+                                lambda v, offset, limit: read(members[v][offset:offset + limit]))
+        else:
+            page = pager(len(ids))
+            # newest first, Odoo asked for the page shown only
+            rows = read(sorted(ids, reverse=True)[page["offset"]:page["offset"] + page["limit"]] if odoo else [])
+            groups = group_rows(rows)
+    except Exception as exc:
+        error = str(exc)
+    return render_template("records/odoo_list.html", title=title, intro=intro, heads=heads, rows=rows, groups=groups,
+                           groupby=groupby, group_options=options, endpoint=endpoint, id_arg=id_arg, empty=empty,
+                           error=error, pager=page)
 
 
 @bp.route("/scraped-bills")

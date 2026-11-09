@@ -2,32 +2,32 @@
 {% from "layout/_icons.html" import icon %}
 {% set fill = true %}
 {% block content %}
-{% set older_shown = pager.offset > 0 %}
+{% set older_shown = pager and pager.offset > 0 %}
 <div class="page">
 {% set kind_icons = {"settings": "sliders", "security": "key", "processing": "inbox", "odoo": "external"} %}
 {% set level_badges = {"error": ("failed", "Error"), "warning": ("review", "Warning")} %}
 
-{% from "layout/_ui.html" import control_panel %}
-{{ control_panel("Activity", pager=pager,
-                 search={"value": query, "placeholder": "Search the activity", "keep": {"kind": kind}},
+{% from "layout/_ui.html" import control_panel, group_body %}
+{{ control_panel("Activity", pager=pager, group_by=group_options,
+                 search={"value": query, "placeholder": "Search the activity", "keep": {"kind": kind, "groupby": groupby}},
                  intro="Who changed what, every sign-in, what the service processed and every record it wrote to Odoo. Kept for "
                        ~ (keep_days or "?") ~ " days.") }}
 
 <nav class="tabs" aria-label="Filter by type">
-  <a href="{{ url_for('web.activity', q=query or None) }}" {% if not kind %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
+  <a href="{{ url_for('web.activity', q=query or None, groupby=groupby) }}" {% if not kind %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
   {% for k, label in labels.items() %}
-  <a href="{{ url_for('web.activity', kind=k, q=query or None) }}" {% if kind == k %}aria-current="true"{% endif %}>
+  <a href="{{ url_for('web.activity', kind=k, q=query or None, groupby=groupby) }}" {% if kind == k %}aria-current="true"{% endif %}>
     {{ icon(kind_icons[k]) }} {{ label }} <span class="n">{{ counts.get(k, 0) }}</span></a>
   {% endfor %}
 </nav>
 <div style="height:20px"></div>
 
-<div class="card table-card fill-card" id="activity-feed" {% if not older_shown %}data-live{% endif %}>
-{% if rows %}
+<div class="card table-card fill-card" id="activity-feed" {% if not older_shown and not groupby %}data-live{% endif %}>
+{% if groups %}
   <table class="data activity">
     <thead><tr><th>When</th><th>What happened</th><th>Type</th><th>By</th></tr></thead>
-    <tbody>
-    {% for a in rows %}
+    {% for grp in groups %}
+    {% call(a) group_body(grp, 4, groupby) %}
     <tr data-key="{{ a.id }}">
       <td data-label="When"><span class="num">{{ a.at|when }}</span></td>
       <td class="cell-main">
@@ -39,10 +39,10 @@
         {% if a.detail %}<details class="detail" id="activity-{{ a.id }}"><summary>Details</summary><pre class="block">{{ a.detail }}</pre></details>{% endif %}
       </td>
       <td data-label="Type"><span class="kind">{{ icon(kind_icons.get(a.kind, "info")) }} {{ labels.get(a.kind, a.kind) }}</span></td>
-      <td data-label="By">{{ "The service" if a.actor == "worker" else a.actor|replace("admin from ", "Admin, ") }}</td>
+      <td data-label="By">{{ actor_label(a.actor) }}</td>
     </tr>
+    {% endcall %}
     {% endfor %}
-    </tbody>
   </table>
 {% else %}
   <div class="empty">

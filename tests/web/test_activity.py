@@ -43,3 +43,28 @@ def test_activity_records_settings_security_and_hides_secrets(client, db):
 
     page = client.get("/activity?kind=settings").get_data(as_text=True)
     assert "Created subject format Maersk" in page and "Admin password set" not in page
+
+
+def test_activity_groups_every_entry_and_opens_a_group_as_odoo_does(client, db):
+    signed_in(client)
+    with db:
+        db.executemany("INSERT INTO activity (kind, actor, summary) VALUES (?, 'worker', ?)",
+                       [("odoo" if n % 2 else "processing", f"Entry {n:03}") for n in range(200)])
+    grouped = client.get("/activity?groupby=kind").get_data(as_text=True)
+    assert 'aria-current="true">Type</a>' in grouped                       # chosen in the Group By menu
+    assert grouped.index('data-group="odoo"') < grouped.index('data-group="processing"') < grouped.index('data-group="security"')
+    assert '<span class="clip">Odoo writes</span><span class="n">100</span>' in grouped   # every entry, not a page
+    assert "Entry 1" not in grouped and 'class="o-pager"' not in grouped    # folded until opened
+    assert 'href="/activity?groupby=kind&amp;group=processing" data-group-toggle aria-expanded="false"' in grouped
+    opened = client.get("/activity?groupby=kind&group=processing").get_data(as_text=True)
+    assert 'data-group="processing" data-loaded' in opened and "Entry 198" in opened and "Entry 040" in opened
+    assert "Entry 038" not in opened and "Entry 199" not in opened
+    assert "<b>1-80</b> / 100" in opened                                    # the group's own pager
+    assert 'href="/activity?groupby=kind&amp;group=processing&amp;offset=80" data-group-page aria-label="Next' in opened
+    assert 'href="/activity?groupby=kind&amp;group=processing&amp;offset=80" data-group-page aria-label="Previous' in opened
+    second = client.get("/activity?groupby=kind&group=processing&offset=80").get_data(as_text=True)
+    assert "<b>81-100</b> / 100" in second and "Entry 038" in second and "Entry 000" in second and "Entry 040" not in second
+    assert 'href="/activity?groupby=kind&amp;group=processing" data-group-page aria-label="Next' in second  # back to the first
+    assert "data-group-page" not in client.get("/activity?groupby=kind&group=security").get_data(as_text=True)
+    assert 'href="/activity?kind=odoo&amp;groupby=kind"' in grouped         # the type tabs keep the grouping
+    assert 'data-group=' not in client.get("/activity").get_data(as_text=True)

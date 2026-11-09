@@ -2,18 +2,18 @@
 {% from "layout/_icons.html" import icon %}
 {% set fill = true %}
 {% block content %}
-{% from "layout/_ui.html" import control_panel %}
-{{ control_panel(title, intro=intro, pager=pager,
-                 search={"filter": "#records", "placeholder": "Filter this page"} if rows else None) }}
+{% from "layout/_ui.html" import control_panel, group_body %}
+{{ control_panel(title, intro=intro, pager=pager, group_by=group_options if groups else None,
+                 search={"filter": "#records", "placeholder": "Filter this page"} if rows and not groupby else None) }}
 
 {% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>{% endif %}
 
 <div class="card table-card fill-card">
-{% if rows %}
+{% if groups %}
   <table class="data" id="records">
     <thead><tr>{% for _c, label in heads %}<th>{{ label }}</th>{% endfor %}</tr></thead>
-    <tbody>
-    {% for r in rows %}
+    {% for grp in groups %}
+    {% call(r) group_body(grp, heads|length, groupby) %}
     {% set href = url_for(endpoint, **{id_arg: r.id}) %}
     <tr data-href="{{ href }}">
       {% for c, label in heads %}
@@ -27,8 +27,8 @@
       {% endif %}
       {% endfor %}
     </tr>
+    {% endcall %}
     {% endfor %}
-    </tbody>
   </table>
   <div class="table-foot" data-filter-empty hidden>Nothing matches the filter.</div>
 {% else %}

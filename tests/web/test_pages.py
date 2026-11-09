@@ -34,3 +34,12 @@ def test_every_field_explains_itself_in_a_tooltip(client):
     signed_in(client)
     page = client.get("/mailboxes/new").get_data(as_text=True)
     assert 'role="tooltip" id="tip-group_address"' in page
+
+
+def test_short_lists_group_every_row_with_empty_values_last():
+    from app.web.ui import group_rows, in_order
+    rows = [{"v": "b"}, {"v": None}, {"v": "a"}, {"v": "b"}, {"v": ""}]
+    groups = group_rows(rows, lambda r: r["v"], str.upper)
+    assert [(g["label"], g["key"], g["count"]) for g in groups] == [("A", "a", 1), ("B", "b", 2), ("None", "", 2)]
+    assert group_rows(rows)[0]["rows"] == rows and group_rows([]) == []
+    assert in_order({"2026-11-01": 1, None: 1, "2026-11-03": 1}, reverse=True) == ["2026-11-03", "2026-11-01", None]

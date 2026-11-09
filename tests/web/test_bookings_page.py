@@ -44,6 +44,12 @@ def test_booking_record_sets_what_the_service_wrote_against_odoo(client, db, mon
 
     listing = client.get("/bookings").get_data(as_text=True)
     assert "BK123" in listing and "1 differs" in listing
+    grouped = client.get("/bookings?groupby=check").get_data(as_text=True)
+    assert '<span class="clip">Differs</span><span class="n">1</span>' in grouped and 'aria-current="true">Check</a>' in grouped
+    assert "BK123" not in grouped                                            # folded until opened
+    assert "BK123" in client.get("/bookings?groupby=check&group=Differs").get_data(as_text=True)
+    by_state = client.get("/bookings?groupby=state&group=Conflict+Detected").get_data(as_text=True)
+    assert '<span class="clip">Conflict Detected</span><span class="n">1</span>' in by_state and "BK123" in by_state
 
     page = client.get("/bookings/41").get_data(as_text=True)
     assert "1 field in Odoo differs" in page

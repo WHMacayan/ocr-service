@@ -11,17 +11,43 @@ from . import bp
 from .base import audit
 from .forms import (_form, column_defaults, describe_changes, mapping_problems, odoo_options, parse_form,
                     record_label, secret_hints, sections, validate)
+from .ui import group_by, group_rows
 from ..core import store
 from ..mail import graph
 
 
+STATUS_LABELS = {"new": "Never read", "running": "Reading now", "success": "Read", "partial": "Partly read",
+                 "error": "Failed"}
+
+
+def group_options(form):
+    """Group By for a list: its choice fields, yes/no fields and Odoo fields (on the name kept beside
+    them), and a mailbox's read status. {key: (label, value of a row, label of a value)}."""
+    options = {}
+    for f in form.fields:
+        if f.kind == "select":
+            options[f.name] = (f.label, lambda r, n=f.name: r[n], lambda v, o=dict(f.options): o.get(v, v))
+        elif f.kind == "bool":
+            options[f.name] = (f.label, lambda r, n=f.name: bool(r[n]), lambda v: "Yes" if v else "No")
+        elif f.kind == "odoo" and f.name_column:
+            options[f.name] = (f.label, lambda r, n=f.name_column: r[n], None)
+    if form.table == "mailbox":
+        options["status"] = ("Read status", lambda r: r["status"], lambda v: STATUS_LABELS.get(v, v))
+    return options
+
+
 @bp.app_template_global()
 def record_list(key):
-    """The rows listed beside a mailbox, vendor mapping or subject format, with their column labels."""
+    """The rows listed beside a mailbox, vendor mapping or subject format, with their column labels,
+    grouped by ?groupby=."""
     form = _form(key)
     order = "sequence, id" if form.table == "subject_format" else "id"
     rows = g.db.execute(f"SELECT * FROM {form.table} ORDER BY {order}").fetchall()
-    return {"rows": rows, "labels": {f.name: f.label for f in form.fields}, "form": form}
+    options = group_options(form)
+    groupby = group_by(options)
+    groups = group_rows(rows, *options[groupby][1:]) if groupby else group_rows(rows)
+    return {"rows": rows, "groups": groups, "groupby": groupby, "group_options": {k: o[0] for k, o in options.items()},
+            "labels": {f.name: f.label for f in form.fields}, "form": form, "status_labels": STATUS_LABELS}
 
 
 @bp.route("/<key>/")

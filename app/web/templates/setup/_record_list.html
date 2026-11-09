@@ -1,13 +1,15 @@
 {% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import group_by_menu, group_items %}
 {# The list beside a mailbox, vendor mapping or subject format; kept in place while one opens beside it. #}
 {% set listed = record_list(key) %}
 {% set form_ = listed.form %}
-{% set status_labels = {"new": "Never read", "running": "Reading now", "success": "Read", "partial": "Partly read", "error": "Failed"} %}
+{% set status_labels = listed.status_labels %}
 {% set purposes = {"freight_booking": "Freight Booking", "bill_matching": "Bill Matching", "customs_entry": "Customs Entry Summaries"} %}
-<section class="pane pane-list" aria-label="{{ form_.title }}" data-list-key="{{ key }}">
+<section class="pane pane-list" aria-label="{{ form_.title }}" data-list-key="{{ key }}{% if listed.groupby %} by {{ listed.groupby }}{% endif %}">
   <div class="pane-head">
     <div class="pane-title">
       <h1>{{ form_.title }}</h1>
+      {{ group_by_menu(listed.group_options) }}
       <a class="btn sm" href="{{ url_for('web.record', key=key) }}">{{ icon("plus") }} Add</a>
     </div>
     {% if listed.rows|length > 6 %}
@@ -15,10 +17,11 @@
     {% endif %}
   </div>
   <ul class="mail-list" id="record-list" {% if key == "mailboxes" %}data-live="list"{% endif %} data-prefetch>
-    {% for row in listed.rows %}
+    {% for grp in listed.groups %}
+    {% call(row) group_items(grp, listed.groupby) %}
     {% set first = form_.columns[0] %}
     <li data-key="{{ row.id }}">
-      <a class="mail-row" href="{{ url_for('web.record', key=key, record_id=row.id) }}" {% if record_id == row.id %}aria-current="true"{% endif %}>
+      <a class="mail-row" href="{{ url_for('web.record', key=key, record_id=row.id, groupby=listed.groupby) }}" {% if record_id == row.id %}aria-current="true"{% endif %}>
         {% if key == "mailboxes" %}<span class="state-dot s-{{ row.status if row.active else 'off' }}"></span>{% endif %}
         <span class="mail-main">
           <span class="mail-top">
@@ -44,6 +47,7 @@
         </span>
       </a>
     </li>
+    {% endcall %}
     {% else %}
     <li class="list-empty">No {{ form_.title|lower }} yet.</li>
     {% endfor %}

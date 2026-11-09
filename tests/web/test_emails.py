@@ -1,6 +1,8 @@
 """The emails: the list beside an email, its conversation, paging, processing again."""
 
 
+import re
+
 from fakes import mailbox, signed_in
 
 
@@ -67,3 +69,24 @@ def test_the_email_list_hands_out_the_next_page(client, db, monkeypatch):
     assert 'data-more="/messages?offset=2"' in first
     second = client.get("/messages?offset=2").get_data(as_text=True)
     assert "Mail 2" in second and "Mail 1" in second and "Mail 4" not in second.split('id="detail"')[0]
+
+
+def test_the_email_list_groups_every_email_and_opens_a_group(client, db, monkeypatch):
+    signed_in(client)
+    monkeypatch.setattr("app.web.ui.GROUP_PAGE", 2)
+    box = mailbox(db)
+    with db:
+        for n, state in enumerate(("failed", "done", "failed", "done", "failed")):
+            db.execute("INSERT INTO message (mailbox_id, dedupe_key, subject, state, received) VALUES (?, ?, ?, ?, ?)",
+                       (box["id"], f"k{n}", f"Mail {n}", state, f"2026-11-0{n + 1} 08:00:00"))
+    grouped = client.get("/messages?groupby=state").get_data(as_text=True).split('id="detail"')[0]
+    assert grouped.index('<span class="clip">Done</span><span class="n">2</span>')         < grouped.index('<span class="clip">Failed</span><span class="n">3</span>')   # in the order an email goes
+    assert "Mail " not in grouped and re.search(r'id="mail-list"\s+data-prefetch', grouped)  # folded, not refreshed
+    assert re.search(r'data-list-key="emails +by state"', grouped)
+    opened = client.get("/messages?groupby=state&group=failed").get_data(as_text=True).split('id="detail"')[0]
+    assert "Mail 4" in opened and "Mail 2" in opened and "Mail 0" not in opened and "Mail 1" not in opened
+    assert 'href="/messages/5?groupby=state"' in opened                             # opening an email keeps the grouping
+    assert "<b>1-2</b> / 3" in opened
+    assert 'href="/messages?groupby=state&amp;group=failed&amp;offset=2" data-group-page aria-label="Next' in opened
+    more = client.get("/messages?groupby=state&group=failed&offset=2").get_data(as_text=True).split('id="detail"')[0]
+    assert "Mail 0" in more and "Mail 4" not in more

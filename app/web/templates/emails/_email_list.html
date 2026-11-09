@@ -1,26 +1,30 @@
 {% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import group_by_menu, group_items %}
 {% set search_terms = q and q.split() or [] %}
 {# The list beside every Emails page. Kept in place when an email opens beside it (data-list-key). #}
-<section class="pane pane-list" aria-label="Email list" data-list-key="emails {{ state or '' }} {{ q }}">
+<section class="pane pane-list" aria-label="Email list" data-list-key="emails {{ state or '' }} {{ q }}{% if groupby %} by {{ groupby }}{% endif %}">
   <div class="pane-head">
     <div class="pane-title">
       <h1>Emails</h1>
-      <span class="live-pill" title="This list updates by itself as the worker reads mail"><span></span>Live</span>
+      {% if not groupby %}<span class="live-pill" title="This list updates by itself as the worker reads mail"><span></span>Live</span>{% endif %}
+      {{ group_by_menu(group_options) }}
     </div>
     <form class="search" method="get" action="{{ url_for('web.messages') }}" role="search">
       {% if state %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
+      {% if groupby %}<input type="hidden" name="groupby" value="{{ groupby }}">{% endif %}
       {{ icon("search") }}<input type="search" name="q" value="{{ q }}" placeholder="Search emails and their files" aria-label="Search emails">
     </form>
-    <nav class="chips" aria-label="Filter by state" id="email-counts" data-live>
-      <a href="{{ url_for('web.messages', q=q or None) }}" {% if not state %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
+    <nav class="chips" aria-label="Filter by state" id="email-counts" {% if not groupby %}data-live{% endif %}>
+      <a href="{{ url_for('web.messages', q=q or None, groupby=groupby) }}" {% if not state %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
       {% for s in route + off_route %}
-      <a href="{{ url_for('web.messages', state=s, q=q or None) }}" {% if state == s %}aria-current="true"{% endif %}>
+      <a href="{{ url_for('web.messages', state=s, q=q or None, groupby=groupby) }}" {% if state == s %}aria-current="true"{% endif %}>
         <span class="dot c-{{ s }}"></span>{{ state_labels[s] }} <span class="n">{{ counts.get(s, 0) }}</span></a>
       {% endfor %}
     </nav>
   </div>
-  <ul class="mail-list" id="mail-list" data-live="list" data-prefetch>
-    {% for m in rows %}
+  <ul class="mail-list" id="mail-list" {% if not groupby %}data-live="list"{% endif %} data-prefetch>
+    {% for grp in groups %}
+    {% call(m) group_items(grp, groupby) %}
     {% set odoo = in_odoo.get(m.id) %}
     <li data-key="{{ m.id }}">
       <a class="mail-row" href="{{ url_for('web.message', message_id=m.id, **filters) }}" {% if current_id == m.id %}aria-current="true"{% endif %}>
@@ -46,16 +50,17 @@
         </span>
       </a>
     </li>
+    {% endcall %}
     {% endfor %}
     {% if more %}
     <li class="list-more" data-more="{{ url_for('web.messages', offset=more, **filters) }}">
       <a class="btn secondary sm" href="{{ url_for('web.messages', offset=more, **filters) }}" data-full>Load more</a></li>
     {% endif %}
-    {% if not rows %}
+    {% if not groups %}
     <li class="list-empty">{% if q %}No email matches “{{ q }}”.{% elif state %}No email is {{ state_labels[state]|lower }} right now.{% else %}No emails read yet.{% endif %}</li>
     {% endif %}
   </ul>
-  {% if q and rows %}
-  <div class="pane-foot">{{ rows|length }}{{ "+" if more }} email{{ "s" if rows|length != 1 }} match “{{ q }}”. <a href="{{ url_for('web.messages', state=state) }}">Clear search</a></div>
+  {% if q and rows and not groupby %}
+  <div class="pane-foot">{{ rows|length }}{{ "+" if more }} email{{ "s" if rows|length != 1 }} match “{{ q }}”. <a href="{{ url_for('web.messages', state=state, groupby=groupby) }}">Clear search</a></div>
   {% endif %}
 </section>

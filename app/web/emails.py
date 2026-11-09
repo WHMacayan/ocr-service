@@ -4,6 +4,7 @@ from flask import abort, flash, g, redirect, render_template, request, url_for
 
 from . import bp, search
 from .base import audit, OFF_ROUTE, reference_url, ROUTE, STATE_LABELS
+from .ui import group_by, group_list, group_rows
 from ..core import store
 from ..odoo.client import MODEL_NAMES
 
@@ -16,27 +17,56 @@ def home():
 # ── emails ───────────────────────────────────────────────────────────
 
 EMAILS_PAGE = 100
+# Group By: the column offered, and the SQL its emails are grouped and counted on.
+EMAIL_GROUPS = {"state": "State", "mailbox": "Mailbox", "sender": "Sender", "day": "Day received"}
+GROUP_SQL = {"state": "m.state", "mailbox": "b.name", "sender": "m.sender", "day": "date(m.received)"}
+EMAIL_SQL = ("SELECT m.*, b.name AS mailbox_name, (SELECT COUNT(*) FROM file f WHERE f.message_id = m.id) AS files, "
+             "(SELECT COUNT(DISTINCT t.internet_message_id) FROM message t WHERE t.conversation_id = m.conversation_id) "
+             "AS thread FROM message m JOIN mailbox b ON b.id = m.mailbox_id WHERE ")
+
+
+def email_groups(groupby, where, args):
+    """Every group of the emails the filter keeps, as Odoo groups a list; a group's emails load when it opens.
+    States come in the order an email goes through them, days newest first."""
+    column = f"NULLIF({GROUP_SQL[groupby]}, '')"
+    totals = dict(g.db.execute(f"SELECT {column}, COUNT(*) FROM message m JOIN mailbox b ON b.id = m.mailbox_id "
+                               f"WHERE {where} GROUP BY 1", args).fetchall())
+    states = ROUTE + OFF_ROUTE
+    return group_list(
+        totals, lambda value, offset, limit: g.db.execute(
+            f"{EMAIL_SQL}{where} AND {column} IS ? ORDER BY m.received DESC, m.id DESC LIMIT ? OFFSET ?",
+            (*args, value, limit, offset)).fetchall(),
+        (lambda s: STATE_LABELS.get(s, s)) if groupby == "state" else None,
+        **({"order": lambda s: states.index(s) if s in states else len(states)} if groupby == "state" else {}),
+        reverse=groupby == "day")
 
 
 def email_list():
-    """The email list beside every Emails page: ?state= and ?q= filter it, ?offset= is the next page."""
+    """The email list beside every Emails page: ?state= and ?q= filter it, ?groupby= groups it,
+    ?offset= is the next page."""
     state = request.args.get("state")
     q = (request.args.get("q") or "").strip()
     offset = max(request.args.get("offset", 0, type=int), 0)
+    groupby = group_by(EMAIL_GROUPS)
     where, args = search.email_where(search.parse(q))
     if state in STATE_LABELS:
         where, args = f"{where} AND m.state = ?", (*args, state)
-    rows = g.db.execute(
-        "SELECT m.*, b.name AS mailbox_name, (SELECT COUNT(*) FROM file f WHERE f.message_id = m.id) AS files, "
-        "(SELECT COUNT(DISTINCT t.internet_message_id) FROM message t WHERE t.conversation_id = m.conversation_id) AS thread "
-        f"FROM message m JOIN mailbox b ON b.id = m.mailbox_id WHERE {where} "
-        "ORDER BY m.received DESC, m.id DESC LIMIT ? OFFSET ?", (*args, EMAILS_PAGE + 1, offset)).fetchall()
-    shown = rows[:EMAILS_PAGE]
+    more = None
+    if groupby:
+        groups = email_groups(groupby, where, args)
+        shown = [r for grp in groups for r in grp["rows"] or []]
+    else:
+        rows = g.db.execute(f"{EMAIL_SQL}{where} ORDER BY m.received DESC, m.id DESC LIMIT ? OFFSET ?",
+                            (*args, EMAILS_PAGE + 1, offset)).fetchall()
+        shown = rows[:EMAILS_PAGE]
+        more = offset + EMAILS_PAGE if len(rows) > EMAILS_PAGE else None
+        groups = group_rows(shown)
     counts = dict(g.db.execute("SELECT state, COUNT(*) FROM message GROUP BY state").fetchall())
-    return {"rows": shown, "more": offset + EMAILS_PAGE if len(rows) > EMAILS_PAGE else None, "offset": offset,
-            "state": state if state in STATE_LABELS else None, "q": q, "counts": counts, "total": sum(counts.values()),
-            "route": ROUTE, "off_route": OFF_ROUTE, "in_odoo": odoo_records([r["id"] for r in shown]),
-            "filters": {"state": state if state in STATE_LABELS else None, "q": q or None}}
+    return {"rows": shown, "groups": groups, "more": more, "offset": offset,
+            "state": state if state in STATE_LABELS else None, "q": q, "counts": counts,
+            "total": sum(counts.values()), "route": ROUTE, "off_route": OFF_ROUTE,
+            "in_odoo": odoo_records([r["id"] for r in shown]), "groupby": groupby, "group_options": EMAIL_GROUPS,
+            "filters": {"state": state if state in STATE_LABELS else None, "q": q or None, "groupby": groupby}}
 
 
 @bp.route("/messages")
@@ -141,5 +171,5 @@ def retry(message_id):
         g.db.execute("UPDATE file SET state = 'new', note = NULL WHERE message_id = ?", (message_id,))
         store.refresh_messages(g.db, [message_id])
     flash("Queued again. It is processed on the worker's next check.")
-    keep = {k: request.args[k] for k in ("state", "q") if request.args.get(k)}
+    keep = {k: request.args[k] for k in ("state", "q", "groupby") if request.args.get(k)}
     return redirect(url_for("web.message", message_id=message_id, **keep))

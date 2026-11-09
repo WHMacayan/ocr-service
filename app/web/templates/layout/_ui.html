@@ -4,8 +4,9 @@
    search in the middle, the pager and the page's buttons (the call block) on the right, and a
    one-line description below.
    search: {"filter": "#table", "placeholder": …} filters the rows shown;
-           {"value": …, "placeholder": …, "keep": {name: value}} searches on the server (?q=). #}
-{% macro control_panel(title, crumbs=(), intro=None, search=None, pager=None, badges=()) -%}
+           {"value": …, "placeholder": …, "keep": {name: value}} searches on the server (?q=).
+   group_by: {key: label}, the columns the Group By menu offers. #}
+{% macro control_panel(title, crumbs=(), intro=None, search=None, pager=None, badges=(), group_by=None) -%}
 <div class="page-head o-cp">
   <div class="o-cp-title">
     {%- for label, href in crumbs %}<a class="o-crumb" href="{{ href }}">{{ label }}</a><span class="o-crumb-sep" aria-hidden="true">/</span>{% endfor %}
@@ -23,6 +24,7 @@
     {%- endif %}
   </div>
   <div class="o-cp-right actions">
+    {%- if group_by %}{{ group_by_menu(group_by) }}{% endif %}
     {%- if pager and pager.total %}{{ pager_nav(pager) }}{% endif %}
     {{- caller() if caller }}
   </div>
@@ -130,4 +132,53 @@
   </span>
   {%- endif %}
 </nav>
+{%- endmacro %}
+
+{# Odoo's Group By: the columns a list can be grouped on (options: {key: label}); ?groupby= carries
+   the choice. Each group's rows sit under a header that folds them away (static/js/app.js). #}
+{% macro group_by_menu(options) -%}
+{%- set m = group_menu(options) %}
+<details class="o-dropdown o-groupby">
+  <summary class="{{ 'on' if m.current }}" title="Group by">{{ icon("layers") }}<span>{{ m.label or "Group by" }}</span></summary>
+  <div class="o-dropdown-menu right">
+    <span class="o-dropdown-head">Group by</span>
+    {%- for key, label, href in m.links %}
+    <a href="{{ href }}" {% if key == m.current %}aria-current="true"{% endif %}>{{ label }}</a>
+    {%- endfor %}
+    {%- if m.current %}<a class="o-groupby-none" href="{{ m.none }}">No grouping</a>{% endif %}
+  </div>
+</details>
+{%- endmacro %}
+
+{# A group's header. Folded (no rows yet) it links to the list with the group open; the page
+   script loads those rows in place instead. An open group with more than a page of rows has its own
+   pager, as in Odoo, at the header's right. A short list's groups come open, every row there. #}
+{% macro group_head(grp) -%}
+<div class="o-group-head">
+  {%- set inner %}{{ icon("chevron") }}<span class="clip">{{ grp.label }}</span><span class="n">{{ grp.count }}</span>{% endset %}
+  {%- if grp.url %}<a href="{{ grp.url }}" data-group-toggle aria-expanded="{{ 'false' if grp.rows is none else 'true' }}">{{ inner }}</a>
+  {%- else %}<button type="button" data-group-toggle aria-expanded="true">{{ inner }}</button>{% endif %}
+  {%- if grp.pager %}
+  <span class="o-group-pager" aria-label="Pages of {{ grp.label }}">
+    <span class="o-pager-total"><b>{{ grp.pager.first }}-{{ grp.pager.last }}</b> / {{ grp.pager.total }}</span>
+    <a class="btn secondary o-pager-btn" href="{{ grp.pager.prev }}" data-group-page aria-label="Previous page of {{ grp.label }}">{{ icon("back") }}</a>
+    <a class="btn secondary o-pager-btn" href="{{ grp.pager.next }}" data-group-page aria-label="Next page of {{ grp.label }}">{{ icon("chevron") }}</a>
+  </span>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# A group in a table, as its own <tbody>: the header and the rows loaded (the call block draws one).
+   Not grouped: the rows alone. #}
+{% macro group_body(grp, columns, grouped) -%}
+<tbody {% if grouped %}data-group="{{ grp.key }}" {% if grp.rows is not none %}data-loaded{% endif %}{% endif %}>
+  {%- if grouped %}<tr class="o-group-row"><th colspan="{{ columns }}" scope="rowgroup">{{ group_head(grp) }}</th></tr>{% endif %}
+  {%- for row in grp.rows or [] %}{{ caller(row) }}{% endfor %}
+</tbody>
+{%- endmacro %}
+
+{# The same in a split-view list: the header item, then the group's items. #}
+{% macro group_items(grp, grouped) -%}
+{%- if grouped %}<li class="list-group" data-group="{{ grp.key }}" {% if grp.rows is not none %}data-loaded{% endif %}>{{ group_head(grp) }}</li>{% endif %}
+{%- for row in grp.rows or [] %}{{ caller(row) }}{% endfor %}
 {%- endmacro %}

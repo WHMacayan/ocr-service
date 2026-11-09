@@ -98,3 +98,21 @@ def test_odoo_lists_ask_odoo_only_for_the_page_shown(client, db, monkeypatch):
         asked.append(sorted(ids)) or ([("name", "Name")], [{"id": i, "raw": {}, "name": f"B{i}"} for i in sorted(ids, reverse=True)])))
     page = client.get("/scraped-bills?offset=80").get_data(as_text=True)
     assert asked == [list(range(41, 121))] and 'value="81-160"' in page and "/ 200" in page
+
+
+def test_odoo_lists_group_every_record_and_read_the_open_group_only(client, db, odoo, monkeypatch):  # noqa: F811
+    for n in range(3):
+        fed(db, "bill_matching", odoo.add("b2b.ocr.scraped.bill", name=f"WAIT-{n}", state="waiting"), f"Invoice W{n}")
+    fed(db, "bill_matching", odoo.add("b2b.ocr.scraped.bill", name="READY-1", state="ready_for_po"), "Invoice R1")
+    fields_get = odoo.call
+    monkeypatch.setattr(odoo, "call", lambda model, method, *args, **kwargs: {
+        f: dict(info, type="selection" if f == "state" else "char")
+        for f, info in fields_get(model, method, *args, **kwargs).items()} if method == "fields_get"
+        else fields_get(model, method, *args, **kwargs))
+    signed_in(client)
+    grouped = client.get("/scraped-bills?groupby=state").get_data(as_text=True)
+    assert '<span class="clip">waiting</span><span class="n">3</span>' in grouped   # every bill, not one page
+    assert '<span class="clip">ready_for_po</span><span class="n">1</span>' in grouped
+    assert "WAIT-0" not in grouped and 'class="o-pager"' not in grouped           # folded until opened
+    opened = client.get("/scraped-bills?groupby=state&group=waiting").get_data(as_text=True)
+    assert all(f"WAIT-{n}" in opened for n in range(3)) and "READY-1" not in opened

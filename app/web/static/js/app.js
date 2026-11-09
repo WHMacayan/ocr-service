@@ -104,10 +104,13 @@ function init(root) {
     tip.classList.toggle("open", open);
   }));
 
-  // Instant filter on short lists.
+  // Instant filter on short lists; a group's header goes when none of its rows is left.
   $$(root, "[data-filter]").forEach(box => {
     box.addEventListener("input", () => {
-      const rows = [...document.querySelectorAll(`${box.dataset.filter} > *, ${box.dataset.filter} tbody tr`)];
+      const target = document.querySelector(box.dataset.filter);
+      if (!target) return;
+      const rows = target.matches("table") ? [...target.querySelectorAll("tbody tr:not(.o-group-row)")]
+        : [...target.children].filter(row => !row.matches(".list-group"));
       const empty = document.querySelector("[data-filter-empty]");
       const words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
       let shown = 0;
@@ -115,6 +118,14 @@ function init(root) {
         const hit = words.every(w => row.textContent.toLowerCase().includes(w));
         row.hidden = !hit;
         shown += hit;
+      });
+      target.querySelectorAll("tbody[data-group]").forEach(body => {
+        body.hidden = !body.querySelector("tr:not(.o-group-row):not([hidden])");
+      });
+      let head = null;
+      [...target.children].forEach(row => {
+        if (row.matches(".list-group")) { head = row; row.hidden = true; }
+        else if (head && !row.hidden) head.hidden = false;
       });
       if (empty) empty.hidden = shown > 0;
     });
@@ -244,9 +255,10 @@ function apply(doc, url, { push, method }) {
   const nextList = next.querySelector("[data-list-key]");
   const sameList = list && nextList && list.dataset.listKey === nextList.dataset.listKey;
   const extended = Number(list?.querySelector("[data-pages]")?.dataset.pages || 1) > 1;
-  if (sameList && extended && method === "GET") {
-    // A longer list than the server sends: keep it, move the highlight, swap the rest.
-    const current = nextList.querySelector('[aria-current="true"]')?.getAttribute("href");
+  if (sameList && (extended || list.querySelector("[data-group]")) && method === "GET") {
+    // A longer list than the server sends, or groups opened in it: keep it, move the highlight, swap the rest.
+    const target = new URL(url);
+    const current = nextList.querySelector('[aria-current="true"]')?.getAttribute("href") ?? target.pathname + target.search;
     list.querySelectorAll(".mail-row").forEach(a =>
       a.getAttribute("href") === current ? a.setAttribute("aria-current", "true") : a.removeAttribute("aria-current"));
     main.querySelector(".split")?.setAttribute("class", next.querySelector(".split")?.getAttribute("class") || "split");
@@ -290,6 +302,7 @@ document.addEventListener("click", e => {
   if (row && !e.target.closest("a, button, form, summary, input")) { visit(new URL(row.dataset.href, location.href).href); return; }
   const a = e.target.closest("a[href]");
   if (!a || a.target || a.hasAttribute("download") || a.hasAttribute("data-full")) return;
+  if (a.matches("[data-group-toggle], [data-group-page]")) return;  // opened in place (Group By, below)
   const url = new URL(a.href, location.href);
   if (!ownPage(url)) return;
   if (url.hash && url.pathname === location.pathname && url.search === location.search) return;  // in-page anchor
@@ -364,7 +377,9 @@ async function poll() {
       const open = new Set([...old.querySelectorAll("details[id]")].filter(d => d.open).map(d => d.id));
       const shut = new Set([...old.querySelectorAll("details[id]")].filter(d => !d.open).map(d => d.id));
       const top = old.scrollTop;  // a list that scrolls on its own stays where it was
+      const folded = foldedGroups(old);
       old.replaceWith(fresh);
+      refold(fresh, folded);
       fresh.scrollTop = top;
       init(fresh);
       fresh.querySelectorAll("details[id]").forEach(d => {
@@ -409,7 +424,7 @@ document.addEventListener("keydown", e => {
   if (!down && !up) return;
   // Arrow keys still scroll the open record when it has focus.
   if (e.key.startsWith("Arrow") && e.target.closest?.(".pane-detail")) return;
-  const rows = [...list.querySelectorAll(".mail-row")];
+  const rows = [...list.querySelectorAll(".mail-row")].filter(r => !r.closest(".group-shut, [hidden]"));
   if (!rows.length) return;
   e.preventDefault();
   const at = rows.findIndex(r => r.getAttribute("aria-current") === "true");
@@ -420,6 +435,82 @@ document.addEventListener("keydown", e => {
   target.scrollIntoView({ block: "nearest" });
   clearTimeout(typingTimer);
   typingTimer = setTimeout(() => visit(target.href), 120);
+});
+
+// ── Group By: a group's header folds its rows away and opens them again ───────────────────────
+
+const isFolded = group => group.querySelector("[data-group-toggle]")?.getAttribute("aria-expanded") === "false";
+
+// Hide the rows of folded groups: in a table each group is its own <tbody>; in a list the rows
+// follow their group's header.
+function foldGroups(root) {
+  $$(root, "tbody[data-group]").forEach(body => body.classList.toggle("group-shut", isFolded(body)));
+  $$(root, ".mail-list").forEach(list => {
+    let folded = false;
+    [...list.children].forEach(li => {
+      if (li.matches(".list-group")) li.classList.toggle("group-folded", folded = isFolded(li));
+      else li.classList.toggle("group-shut", folded);
+    });
+  });
+}
+const foldedGroups = root => new Set([...root.querySelectorAll("[data-group]")].filter(isFolded).map(g => g.dataset.group));
+function refold(root, folded) {
+  if (!folded?.size) return;
+  root.querySelectorAll("[data-group]").forEach(g => {
+    if (folded.has(g.dataset.group)) g.querySelector("[data-group-toggle]")?.setAttribute("aria-expanded", "false");
+  });
+  foldGroups(root);
+}
+
+// A group's header: its <tbody>, or in a list the header item its rows follow.
+function groupOf(el) {
+  const body = el.closest("tbody[data-group]");
+  if (body) return body;
+  let li = el.closest("li");
+  while (li && !li.matches(".list-group")) li = li.previousElementSibling;
+  return li;
+}
+
+// As in Odoo a grouped list comes folded; a group's page of rows is fetched when it opens or its pager
+// turns (the list with ?group= set sends that group open), and the group is swapped for it: its header
+// (with the pager) and rows in a table's <tbody>, or the header item and the items after it in a list.
+async function loadGroup(group, url) {
+  const box = group.closest("table, .mail-list");
+  try {
+    const page = await load(url);
+    const doc = page.html && new DOMParser().parseFromString(page.html, "text/html");
+    const fresh = doc?.querySelector(`[data-group="${CSS.escape(group.dataset.group)}"][data-loaded]`);
+    if (!fresh) throw new Error("no group");
+    if (fresh.matches("tbody")) {
+      group.replaceWith(fresh);
+    } else {
+      const items = [];
+      for (let li = fresh.nextElementSibling; li && !li.matches(".list-group"); li = li.nextElementSibling) items.push(li);
+      while (group.nextElementSibling && !group.nextElementSibling.matches(".list-group")) group.nextElementSibling.remove();
+      group.replaceWith(fresh, ...items);
+      items.forEach(init);
+    }
+    init(fresh);
+    foldGroups(box);
+  } catch {
+    location.href = url;  // the group as a page of its own
+  }
+}
+
+document.addEventListener("click", e => {
+  if (!inApp() || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;  // a new tab opens it as a page
+  const link = e.target.closest("[data-group-page], [data-group-toggle]");
+  if (!link) return;
+  e.preventDefault();
+  const group = groupOf(link);
+  if (link.matches("[data-group-toggle]") && group.hasAttribute("data-loaded")) {
+    link.setAttribute("aria-expanded", isFolded(group) ? "true" : "false");
+    foldGroups(group.closest("table, .mail-list"));
+    return;
+  }
+  if (group.hasAttribute("aria-busy")) return;
+  group.setAttribute("aria-busy", "true");
+  loadGroup(group, link.href).finally(() => group.removeAttribute("aria-busy"));
 });
 
 // ── notebooks: a record's child tables as tabs, one shown at a time ───────────────────────────
