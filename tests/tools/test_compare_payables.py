@@ -67,6 +67,29 @@ def test_report_survives_a_windows_console(tmp_path, monkeypatch):
     assert cp.main(["audit", str(scan(tmp_path, [vietnamese])), str(scan(tmp_path, [], "b.json"))]) == 1
 
 
+def test_inventory_counts_by_conversation(db, tmp_path):
+    db.execute("INSERT INTO mailbox (name, purpose) VALUES ('Payables', 'freight_payables')")
+    stored = [("k1", "t1", "2026-11-03 08:00:00"), ("k2", "t1", "2026-11-04 09:00:00"),
+              ("k3", "t2", "2026-11-05 23:00:00"),
+              ("k4", "t3", "2026-11-06 01:00:00"),   # after date_to: not counted
+              ("k5", "t9", "2026-11-02 23:59:00")]   # before the scanner's first day: not counted
+    with db:
+        db.executemany("INSERT INTO payables_message (mailbox_id, dedupe_key, conversation_id, received) "
+                       "VALUES (1, ?, ?, ?)", stored)
+    emails = tmp_path / "emails.json"
+    emails.write_text(json.dumps([
+        {"conversation_id": "t1", "received": "2026-11-03T08:00:00Z"},
+        {"conversation_id": "t1", "received": "2026-11-04T09:00:00Z"},
+        {"conversation_id": "t2", "received": "2026-11-05T23:00:00Z"}]), encoding="utf-8")
+    db_path = db.directory / "ocr.sqlite3"
+
+    assert cp.inventory(db_path, emails, "2026-11-05") == {}
+
+    emails.write_text(json.dumps([{"conversation_id": "t1", "received": "2026-11-03T08:00:00Z"},
+                                  {"conversation_id": "t4", "received": "2026-11-04T08:00:00Z"}]), encoding="utf-8")
+    assert cp.inventory(db_path, emails, "2026-11-05") == {"t1": (1, 2), "t2": (0, 1), "t4": (1, 0)}
+
+
 def test_main_reports_differences(tmp_path, capsys):
     assert cp.main(["audit", str(scan(tmp_path, [ROW_A])), str(scan(tmp_path, [ROW_B], "b.json"))]) == 1
     assert "only in" in capsys.readouterr().out

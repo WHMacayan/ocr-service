@@ -2,6 +2,7 @@
 
     python tools/compare_payables.py audit    "<Run A>/scan ....json"            "<Run B>/scan ....json"
     python tools/compare_payables.py invoices "<Run A>/.../Consolidated_Invoice.xlsx" "<Run B>/.../Consolidated_Invoice.xlsx"
+    python tools/compare_payables.py inventory /data/ocr.sqlite3 "<Run>/emails <from> to <to>.json" <to>
 
 Exits 0 only when there is no difference, so a side-by-side run can be checked by its exit code.
 """
@@ -76,6 +77,24 @@ def diff(left, right, fields):
     }
 
 
+def inventory(db_path, emails_json, date_to):
+    """Emails per conversation: the scanner's emails JSON against payables_message, over the same UTC days
+    (the scanner's first day to ``date_to``). Returns {conversation: (scanner, store)} where they differ."""
+    import sqlite3
+    emails = json.loads(Path(emails_json).read_text(encoding="utf-8"))
+    scanner = Counter(e["conversation_id"] for e in emails)
+    first = min((e["received"][:10] for e in emails), default=date_to)
+    db = sqlite3.connect(db_path)
+    try:
+        stored = Counter(row[0] for row in db.execute(
+            "SELECT conversation_id FROM payables_message WHERE received >= ? AND received <= ?",
+            (f"{first} 00:00:00", f"{date_to} 23:59:59")))
+    finally:
+        db.close()
+    return {conversation: (scanner[conversation], stored[conversation])
+            for conversation in sorted(set(scanner) | set(stored)) if scanner[conversation] != stored[conversation]}
+
+
 def report(result, left_name, right_name):
     for key in result["only_left"]:
         print(f"only in {left_name}: {key}")
@@ -98,7 +117,17 @@ def main(argv=None):
         command = sub.add_parser(name)
         command.add_argument("left")
         command.add_argument("right")
+    command = sub.add_parser("inventory", help="emails per conversation: ocr.sqlite3 against a Run's emails JSON")
+    command.add_argument("db")
+    command.add_argument("emails_json")
+    command.add_argument("date_to")
     args = parser.parse_args(argv)
+    if args.command == "inventory":
+        differences = inventory(args.db, args.emails_json, args.date_to)
+        for conversation, (scanner, stored) in differences.items():
+            print(f"{conversation}: scanner {scanner}, store {stored}")
+        print(f"{len(differences)} conversation(s) differ")
+        return 0 if not differences else 1
     if args.command == "audit":
         result = diff(load_audit(args.left), load_audit(args.right), AUDIT_FIELDS)
     else:
