@@ -13,6 +13,9 @@ from .flows.pipeline import process
 _logger = logging.getLogger(__name__)
 
 DEFAULT_POLL_SECONDS = 60
+# Read by its own worker (app/payables/worker.py) into its own tables, never by this loop:
+# here its mail would reach the Odoo pipeline.
+PAYABLES = "freight_payables"
 
 
 def is_due(mailbox, now):
@@ -31,7 +34,7 @@ def read_mailboxes(db, now=None, after_each=None):
     ``after_each`` runs after every mailbox read, so a long read never holds up processing."""
     now = now or utc_now()
     for mailbox in store.active_mailboxes(db):
-        if not is_due(mailbox, now):
+        if mailbox["purpose"] == PAYABLES or not is_due(mailbox, now):
             continue
         try:
             def save_tokens(values, mailbox_id=mailbox["id"]):
