@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS mailbox (
     name TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
     purpose TEXT NOT NULL DEFAULT 'freight_booking',  -- freight_booking | bill_matching | customs_entry
+                                                       -- | freight_payables (Excel only; see payables_* tables)
     company_id INTEGER,                                -- Odoo res.company id
     booking_number_pattern TEXT,
     tenant_id TEXT,
@@ -187,3 +188,47 @@ CREATE TABLE IF NOT EXISTS subject_format (
     subject_pattern TEXT NOT NULL,
     confirms_booking INTEGER NOT NULL DEFAULT 0
 );
+
+-- Freight Payables: its own copy of the mail, never read by the Odoo pipeline (which reads message and file).
+CREATE TABLE IF NOT EXISTS payables_setting (
+    mailbox_id INTEGER PRIMARY KEY REFERENCES mailbox(id) ON DELETE CASCADE,
+    invoices_enabled INTEGER NOT NULL DEFAULT 1,       -- invoice flow: Consolidated_Invoice.xlsx
+    audit_enabled INTEGER NOT NULL DEFAULT 1           -- audit flow: Freight Payable.xlsx
+);
+
+CREATE TABLE IF NOT EXISTS payables_message (
+    id INTEGER PRIMARY KEY,
+    mailbox_id INTEGER NOT NULL REFERENCES mailbox(id),
+    dedupe_key TEXT NOT NULL UNIQUE,
+    graph_message_id TEXT,
+    internet_message_id TEXT,
+    conversation_id TEXT,
+    subject TEXT,
+    sender TEXT,
+    sender_domain TEXT,
+    received TEXT,                                     -- UTC, YYYY-MM-DD HH:MM:SS
+    body_html TEXT,
+    unique_body_html TEXT,                             -- only what this reply added
+    skipped_attachments TEXT,
+    state TEXT NOT NULL DEFAULT 'new',                 -- new | skipped
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS payables_message_conversation ON payables_message (conversation_id);
+
+CREATE TABLE IF NOT EXISTS payables_file (
+    id INTEGER PRIMARY KEY,
+    sha256 TEXT NOT NULL UNIQUE,
+    path TEXT NOT NULL,                                -- files/payables/<sha[:2]>/<sha> on the data volume
+    kind TEXT NOT NULL,                                -- pdf | image | xlsx | xls | zip | eml | msg
+    size INTEGER NOT NULL
+);
+
+-- Every email a file arrived on: a file re-attached in another thread is linked there too.
+CREATE TABLE IF NOT EXISTS payables_message_file (
+    message_id INTEGER NOT NULL REFERENCES payables_message(id) ON DELETE CASCADE,
+    file_id INTEGER NOT NULL REFERENCES payables_file(id) ON DELETE CASCADE,
+    filename TEXT,
+    is_inline INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (message_id, file_id)
+);
+CREATE INDEX IF NOT EXISTS payables_message_file_file ON payables_message_file (file_id);

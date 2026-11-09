@@ -19,7 +19,7 @@ Field = namedtuple("Field", "name label kind options help name_column group tip"
 Form = namedtuple("Form", "table title singular columns fields groups")
 
 PURPOSES = [("freight_booking", "Freight Booking"), ("bill_matching", "Bill Matching"),
-            ("customs_entry", "Customs Entry Summaries")]
+            ("customs_entry", "Customs Entry Summaries"), ("freight_payables", "Freight Payables")]
 SUBJECT_GROUPS = {"booking_number", "master_bl", "house_bl", "invoice_number", "etd", "eta"}
 
 
@@ -30,7 +30,8 @@ FORMS = {
                   tip="A name for this mailbox, shown in the lists and the activity log."),
             Field("purpose", "Purpose", "select", PURPOSES, group="Mailbox",
                   tip="Freight Booking: shipping documents become booking suggestions in Odoo. Bill Matching: "
-                      "supplier invoices are matched to a draft bill or purchase order."),
+                      "supplier invoices are matched to a draft bill or purchase order. Freight Payables: "
+                      "freight invoices and the freight audit as Excel workbooks; never written to Odoo."),
             Field("company_id", "Company", "odoo", "companies", group="Mailbox",
                   tip="The Odoo company the bookings or bills from this mailbox belong to."),
             Field("active", "Active", "bool", help="Inactive mailboxes are never read", group="Mailbox",
