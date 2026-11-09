@@ -4,6 +4,8 @@
     flask --app app reset-password   forget the admin password
     flask --app app worker     run continuously
     flask --app app run-once   one pass: due mailboxes, then the new files
+    flask --app app payables-worker     the Freight Payables mailboxes, continuously
+    flask --app app payables-run-once   one pass over the due Freight Payables mailboxes
 """
 
 import logging
@@ -15,6 +17,7 @@ from flask import Flask
 from .core import store
 from .web import bp
 from .worker import run_forever, run_once
+from .payables import worker as payables_worker
 
 
 def create_app():
@@ -61,6 +64,20 @@ def create_app():
         db = store.connect()
         try:
             run_once(db)
+        finally:
+            db.close()
+
+    @app.cli.command("payables-worker")
+    def payables_worker_command():
+        """Read the due Freight Payables mailboxes forever (no Odoo)."""
+        payables_worker.run_payables_forever()
+
+    @app.cli.command("payables-run-once")
+    def payables_run_once_command():
+        """One pass over the due Freight Payables mailboxes."""
+        db = payables_worker.connect()
+        try:
+            payables_worker.run_payables_once(db)
         finally:
             db.close()
 

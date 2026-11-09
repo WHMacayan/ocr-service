@@ -24,5 +24,15 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # Freight Payables mailboxes only, in their own process: a slow payables run never delays the others.
+  payables-worker:
+    build: .
+    command: flask --app app payables-worker
+    volumes:
+      - ocr-data:/data
+    extra_hosts: *hosts
+    restart: unless-stopped
+    logging: *logging
+
 volumes:
   ocr-data:
