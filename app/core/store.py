@@ -4,6 +4,7 @@ The volume also holds secret.key, made on first start, which encrypts the
 secrets kept in SQLite (API keys, the Outlook client secret and tokens).
 """
 
+import hashlib
 import os
 import sqlite3
 from pathlib import Path
@@ -59,14 +60,34 @@ def connect(path=None):
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         db.executemany("INSERT OR IGNORE INTO setting (key, value) VALUES (?, ?)",
                        defaults.DEFAULT_SETTINGS.items())
+        _upgrade_prompts(db)
         _move_single_connection(db)
     return db
+
+
+def prompt_fingerprint(text):
+    """A prompt's fingerprint, its spacing ignored: see defaults.EARLIER_PROMPTS."""
+    return hashlib.sha256(" ".join((text or "").split()).encode()).hexdigest()[:16]
+
+
+def _upgrade_prompts(db):
+    """A prompt still at an earlier default moves to the current one; an edited prompt is kept."""
+    for key, earlier in defaults.EARLIER_PROMPTS.items():
+        row = db.execute("SELECT value FROM setting WHERE key = ?", (key,)).fetchone()
+        if row and prompt_fingerprint(row["value"]) in earlier:
+            db.execute("UPDATE setting SET value = ? WHERE key = ?", (defaults.DEFAULT_SETTINGS[key], key))
 
 
 # Columns added to tables after their first release: CREATE TABLE IF NOT EXISTS leaves existing tables as they are.
 ADDED_COLUMNS = [("message", "processed_at", "TEXT"), ("odoo_change", "values_json", "TEXT"),
                  ("mailbox", "sender_domains", "TEXT"),
-                 ("odoo_change", "connection_id", "INTEGER REFERENCES odoo_connection(id) ON DELETE CASCADE")]
+                 ("odoo_change", "connection_id", "INTEGER REFERENCES odoo_connection(id) ON DELETE CASCADE"),
+                 ("payables_setting", "export_folder", "TEXT"),
+                 ("payables_setting", "export_auto", "INTEGER NOT NULL DEFAULT 0"),
+                 ("payables_setting", "export_every", "INTEGER NOT NULL DEFAULT 1"),
+                 ("payables_setting", "export_unit", "TEXT NOT NULL DEFAULT 'days'"),
+                 ("payables_setting", "export_next", "TEXT"), ("payables_setting", "export_last_at", "TEXT"),
+                 ("payables_setting", "export_last_run", "TEXT")]
 
 # The one Odoo connection the Settings page held before there were several.
 OLD_CONNECTION_SETTINGS = ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key")

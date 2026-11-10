@@ -1,6 +1,7 @@
 """The service loop: read every mailbox that is due, process the new files, sleep."""
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 
@@ -16,6 +17,15 @@ DEFAULT_POLL_SECONDS = 60
 # Read by its own worker (app/payables/worker.py) into its own tables, never by this loop:
 # here its mail would reach the Odoo pipeline.
 PAYABLES = "freight_payables"
+# Several workers can run side by side, one per mailbox purpose: WORKER_PURPOSES (comma-separated) says
+# which this one reads and processes; unset, it does them all, as a single worker.
+BUSY_TIMEOUT_MS = 120_000
+
+
+def worker_purposes():
+    """The mailbox purposes this worker handles, from WORKER_PURPOSES; None for all."""
+    purposes = [p.strip() for p in os.environ.get("WORKER_PURPOSES", "").split(",") if p.strip()]
+    return tuple(purposes) or None
 
 
 def is_due(mailbox, now):
@@ -29,12 +39,14 @@ def is_due(mailbox, now):
     return last + timedelta(minutes=mailbox["sync_interval"] or 0) <= now
 
 
-def read_mailboxes(db, now=None, after_each=None):
-    """One pass over the active mailboxes. A failing mailbox never stops the others.
-    ``after_each`` runs after every mailbox read, so a long read never holds up processing."""
+def read_mailboxes(db, now=None, after_each=None, purposes=None):
+    """One pass over the active mailboxes (of ``purposes``, when given). A failing mailbox never stops
+    the others. ``after_each`` runs after every mailbox read, so a long read never holds up processing."""
     now = now or utc_now()
     for mailbox in store.active_mailboxes(db):
         if mailbox["purpose"] == PAYABLES or not is_due(mailbox, now):
+            continue
+        if purposes and mailbox["purpose"] not in purposes:
             continue
         try:
             def save_tokens(values, mailbox_id=mailbox["id"]):
@@ -46,11 +58,13 @@ def read_mailboxes(db, now=None, after_each=None):
             after_each()
 
 
-def process_files(db):
-    """Hand the new files to the pipeline once per Odoo connection that is on. A connection that
-    cannot be reached is left for the next run; the others carry on."""
+def process_files(db, purposes=None):
+    """Hand the new files (of ``purposes``, when given) to the pipeline once per Odoo connection that is
+    on. A connection that cannot be reached is left for the next run; the others carry on."""
+    mine = f"AND b.purpose IN ({', '.join('?' * len(purposes))})" if purposes else ""
     before = {row["id"]: (row["state"], row["note"]) for row in db.execute(
-        "SELECT id, state, note FROM message WHERE state IN ('new', 'review')")}
+        "SELECT m.id, m.state, m.note FROM message m JOIN mailbox b ON b.id = m.mailbox_id "
+        f"WHERE m.state IN ('new', 'review') {mine}", purposes or ())}
     for connection in store.connections(db, on=True):
         if not store.is_complete(connection):
             continue
@@ -59,7 +73,7 @@ def process_files(db):
         except Exception as exc:
             _logger.warning("Cannot reach Odoo %s, its files wait for the next run: %s", connection["name"], exc)
             continue
-        process(db, odoo, connection["id"])
+        process(db, odoo, connection["id"], purposes)
     log_outcomes(db, before)
 
 
@@ -86,14 +100,22 @@ def log_outcomes(db, before):
                            level=level, link=f"/messages/{row['id']}")
 
 
-def run_once(db):
-    read_mailboxes(db, after_each=lambda: process_files(db))
-    process_files(db)
+def run_once(db, purposes=None):
+    purposes = purposes or worker_purposes()
+    if purposes:
+        read_mailboxes(db, after_each=lambda: process_files(db, purposes), purposes=purposes)
+        process_files(db, purposes)
+    else:  # a single worker for every mailbox, as before
+        read_mailboxes(db, after_each=lambda: process_files(db))
+        process_files(db)
     store.prune_activity(db)
 
 
 def run_forever():
     db = store.connect()
+    # Other workers write too: wait for their short transactions rather than fail.
+    db.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    _logger.info("Worker for %s", ", ".join(worker_purposes() or ("every mailbox",)))
     while True:
         try:
             run_once(db)

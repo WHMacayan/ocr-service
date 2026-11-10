@@ -1147,3 +1147,18 @@ tbody.group-shut tr:not(.o-group-row), .mail-list > .group-shut { display: none;
   .data tr.o-group-row { padding: 0; }
   .data .o-group-row th { display: block; }
 }
+
+/* A field that starts with a fixed part: "OneDrive - ATV INC \" then the folder typed. */
+.input-prefix { display: flex; align-items: stretch; min-width: 0; }
+.input-prefix > span { display: flex; align-items: center; padding: 0 10px; border: 1px solid var(--border-strong);
+                       border-right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); background: var(--surface-2);
+                       color: var(--text-2); font-size: 13.5px; white-space: nowrap; }
+.input-prefix > input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+/* The sign-in page's Show button sits beside the password, not under it like the page's main button. */
+.auth-card .secret-input .btn { width: auto; margin-top: 0; height: 40px; }
+
+/* A number and its unit side by side: Repeat every [1] [Days]. */
+.input-pair { display: flex; gap: 8px; min-width: 0; }
+.input-pair > input { width: 90px; flex: none; }
+.input-pair > select { flex: 1; min-width: 0; }

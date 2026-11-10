@@ -157,13 +157,24 @@ def window_start(mailbox, now):
     return start.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+def window_since(mailbox, now):
+    """Where a read starts: the mailbox's start date when it has one (however far back), else the
+    look-back window; moved up to the resume point."""
+    start = mailbox.get("start_from")
+    since = datetime.strptime(start, ODOO_DATETIME) if start else window_start(mailbox, now)
+    resume = mailbox.get("fetch_resume_from")
+    if resume:
+        since = max(since, datetime.strptime(resume, ODOO_DATETIME))
+    return since
+
+
+def window_days(mailbox, now):
+    """The days a read covers, for its page limit: at least the look-back."""
+    return max(effective_window_days(mailbox), (now - window_since(mailbox, now)).days)
+
+
 def window_filter(mailbox, now):
-    """The window start, moved up to the mailbox's start date and resume point."""
-    since = window_start(mailbox, now)
-    for later in (mailbox.get("start_from"), mailbox.get("fetch_resume_from")):
-        if later:
-            since = max(since, datetime.strptime(later, ODOO_DATETIME))
-    return f"receivedDateTime ge {since.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    return f"receivedDateTime ge {window_since(mailbox, now).strftime('%Y-%m-%dT%H:%M:%SZ')}"
 
 
 def messages_url(mailbox):
@@ -277,7 +288,7 @@ class MailboxSync:
             "$top": PAGE_SIZE,
         }
         max_pages = min(MAX_HEADER_PAGES,
-                        PAGES_PER_WINDOW_DAY * (effective_window_days(mailbox) + 6))
+                        PAGES_PER_WINDOW_DAY * (window_days(mailbox, self.now()) + 6))
         collected, seen_keys, unstored = [], set(), []
         left_out = Counter()
         headers_read = already_stored = pages = 0

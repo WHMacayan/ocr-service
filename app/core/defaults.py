@@ -20,9 +20,11 @@ Fields:
 - master_bl: the carrier's ocean bill (Master B/L, Ocean B/L, MBL, "BL/SWB No"); usually starts with the carrier code (HLCU, ONEY, MAEU, COSU)
 - house_bl: the forwarder's own bill (House B/L, HBL); never a carrier bill
 - containers: container numbers, 4 letters + 7 digits
-- vessel / voyage: the ocean vessel and its voyage
-- port_of_loading / port_of_discharge: the seaports of the ocean leg; never an inland destination
-- etd: departure from the port of loading; eta: arrival at the port of discharge; YYYY-MM-DD
+- vessel / voyage: the ocean (trunk, mother) vessel and its voyage; on a bill of lading, the vessel printed under Vessel/Voyage. Never a port, terminal, carrier or charge name
+- pre_carrier_vessel / pre_carrier_voyage: the feeder or pre-carriage vessel to the transshipment port, only when the document prints one separately (Pre-carrier, Pre-carriage by, Feeder, 1st vessel)
+- port_of_loading / port_of_discharge: the seaports of the ocean leg; never an inland destination; never a transshipment (T/S) port
+- etd: departure from the port of loading; eta: arrival at the port of discharge; YYYY-MM-DD. Read printed dates with the document's own order: 2026/11/03 is 3 November
+- master_bl on a house bill or forwarder's cargo receipt: only the number printed as the carrier's or ocean B/L; the document's own number is the house_bl
 - forwarder_name: the party in a field labelled Forwarder, otherwise the issuer of the document; never the customer, consignee, shipper or bill-to party
 - factory_name: the shipper, seller or exporter of the goods; never the consignee, importer or customer
 - invoices: the factory's commercial invoice numbers only
@@ -38,7 +40,17 @@ INVOICE_PROMPT = """You read one supplier document for an accounts payable team 
 - invoice_date: YYYY-MM-DD. currency: ISO code as printed or clearly shown by its symbol.
 - po_numbers: purchase order numbers printed on the document.
 - containers: container numbers (4 letters + 7 digits).
-- lines: every charge or item line of the invoice, in printed order: description, quantity, unit_price and the line amount, each as printed (null when the line does not print it). Leave out subtotals, taxes shown as totals, and the grand total."""
+- lines: every charge or item line of the invoice, in printed order: description, part_number, quantity, unit_price and the line amount, each as printed (null when the line does not print it). Leave out subtotals, taxes shown as totals, and the grand total.
+- A line's description is that line's own item text: for goods, its size, pattern or model and specifications as printed on the line (for example "235/40ZR19 GRAND SPORT A/S 96/XL_W"); never a heading or brand shared by every line.
+- part_number: the line's item code, part number, SKU or article number as printed on that line; null when the line prints none."""
+
+# Earlier defaults of the prompts, by fingerprint (sha256 of the text with its spacing collapsed, first 16
+# characters). A saved prompt that is one of them was never edited, so it moves to the current default;
+# a prompt changed on the settings page is kept.
+EARLIER_PROMPTS = {
+    "invoice_prompt": {"6302e111dea481aa", "4502e6950b7a3818"},
+    "freight_prompt": {"e33e906ba288143f"},
+}
 
 # Seeded with INSERT OR IGNORE: a value changed on the settings page is kept.
 DEFAULT_SETTINGS = {
@@ -49,4 +61,5 @@ DEFAULT_SETTINGS = {
     "max_pages": "20",
     "max_retries": "5",
     "documents_per_run": "20",
+    "ai_parallel": "5",
 }

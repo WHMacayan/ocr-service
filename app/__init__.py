@@ -4,20 +4,28 @@
     flask --app app reset-password   forget the admin password
     flask --app app worker     run continuously
     flask --app app run-once   one pass: due mailboxes, then the new files
+    flask --app app clean-up [--apply]   settle existing conflicts, re-read ready bills, freight from bills
     flask --app app payables-worker     the Freight Payables mailboxes, continuously
     flask --app app payables-run-once   one pass over the due Freight Payables mailboxes
 """
 
+import hashlib
 import logging
 import secrets
 from datetime import timedelta
 
+import click
 from flask import Flask
 
 from .core import store
 from .web import bp
 from .worker import run_forever, run_once
 from .payables import worker as payables_worker
+
+
+def session_cookie_name(secret):
+    """ocr_session_ and a short fingerprint of the install's secret key: one cookie per install."""
+    return f"ocr_session_{hashlib.sha256(secret.encode()).hexdigest()[:8]}"
 
 
 def create_app():
@@ -31,13 +39,13 @@ def create_app():
     app.secret_key = store.get_setting(db, "web_secret")
     db.close()
     app.config.update(
-        # Its own name: browsers share cookies across ports, so another local app's "session"
-        # cookie would otherwise replace this one and sign you out.
-        SESSION_COOKIE_NAME="ocr_session",
+        # A name of this install's own: browsers share cookies across ports, so another local app, or
+        # another copy of this one, would otherwise replace the login cookie and sign you out.
+        SESSION_COOKIE_NAME=session_cookie_name(app.secret_key),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        # Signed in for a week from the last visit (each visit renews it).
-        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+        # Signed in for 30 days from the last visit: each visit renews it, so a browser in use stays signed in.
+        PERMANENT_SESSION_LIFETIME=timedelta(days=30),
         MAX_CONTENT_LENGTH=1024 * 1024,
     )
     app.register_blueprint(bp)
@@ -64,6 +72,31 @@ def create_app():
         db = store.connect()
         try:
             run_once(db)
+        finally:
+            db.close()
+
+    @app.cli.command("clean-up")
+    @click.option("--apply", is_flag=True, help="Write the changes; without it, only report them.")
+    @click.option("--only", type=click.Choice(["conflicts", "bills", "freight"]), multiple=True,
+                  help="One pass (repeatable); all three when left out.")
+    @click.option("--limit", type=int, help="Bills read again at most (bills pass).")
+    def clean_up_command(apply, only, limit):
+        """After the booking and bill rules changed: close the conflicts they settle, read the ready bills'
+        invoices again, give forwarders' invoices in Bill Matching to their bookings (see flows/cleanup.py)."""
+        from .flows import cleanup
+        from .odoo.client import Odoo
+        passes = {"conflicts": lambda db, odoo, cid: cleanup.close_false_conflicts(db, odoo, cid, apply),
+                  "bills": lambda db, odoo, cid: cleanup.reread_ready_bills(db, odoo, cid, apply, limit),
+                  "freight": lambda db, odoo, cid: cleanup.freight_from_bills(db, odoo, cid, apply)}
+        db = store.connect()
+        try:
+            for connection in store.connections(db, on=True):
+                odoo = Odoo.from_connection(db, connection)
+                for name in only or passes:
+                    outcome = passes[name](db, odoo, connection["id"])
+                    print(f"{connection['name']} · {name}{'' if apply else ' (report only)'}:")
+                    for reason, count in outcome.most_common():
+                        print(f"  {count:5}  {reason}")
         finally:
             db.close()
 

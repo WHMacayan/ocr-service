@@ -30,6 +30,9 @@ SETTINGS = [
     Setting("max_pages", "Pages read per file", "int", "", "Processing",
             "Only this many pages of each file are read. Most shipping documents carry what is needed on the "
             "first pages."),
+    Setting("ai_parallel", "Files read by the AI at once", "int", "", "Processing",
+            "How many of a run's new files the AI reads at the same time, before anything is written to Odoo. "
+            "More is faster on a backlog; OpenAI's rate limit for your key is the ceiling. 1 reads them one by one."),
     Setting("documents_per_run", "Files processed per run", "int", "", "Processing",
             "How many files are read in one pass of the worker. Spreads the work and the AI cost over time."),
     Setting("max_retries", "Attempts before an email is marked failed", "int", "", "Processing",

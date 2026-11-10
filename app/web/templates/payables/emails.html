@@ -1,0 +1,49 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel, group_body %}
+{% from "payables/_tabs.html" import payables_tabs with context %}
+{% set fill = true %}
+{% block content %}
+<div class="page">
+{{ control_panel("Freight Payables", pager=pager, group_by=group_options,
+                 search={"value": query, "placeholder": "Search subject, sender or file name", "keep": {"groupby": groupby}},
+                 intro="The mail the Freight Payables mailboxes stored, with every file kept from it. Nothing here is written to Odoo.") }}
+{{ payables_tabs(tab) }}
+
+<div class="card table-card fill-card">
+{% if groups %}
+  <table class="data" id="records">
+    <thead><tr><th>Email</th><th>Mailbox</th><th>Received</th><th>Files</th></tr></thead>
+    {% for grp in groups %}
+    {% call(m) group_body(grp, 4, groupby) %}
+    {% set href = url_for('web.payables_email', message_id=m.id) %}
+    <tr data-href="{{ href }}">
+      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ (m.subject or "No subject")|highlight(query.split()) }}</a>
+        <span class="sub">{{ m.sender|highlight(query.split()) }}</span></td>
+      <td data-label="Mailbox">{{ m.mailbox_name }}</td>
+      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
+      <td data-label="Files">{% if m.files %}<span class="num">{{ m.files }}</span>{% else %}<span class="faint">–</span>{% endif %}</td>
+    </tr>
+    {% endcall %}
+    {% endfor %}
+  </table>
+{% else %}
+  <div class="empty">
+    <div class="empty-icon">{{ icon("inbox") }}</div>
+    {% if query %}
+    <h2>Nothing matches “{{ query }}”</h2><p>Try fewer words, or part of a file name.</p>
+    {% elif not mailboxes %}
+    <h2>No Freight Payables mailbox yet</h2>
+    <p>Add a mailbox with the purpose Freight Payables, connect Outlook and switch it on.</p>
+    <div class="actions"><a class="btn" href="{{ url_for('web.record', key='mailboxes') }}">{{ icon("plus") }} Add mailbox</a></div>
+    {% else %}
+    <h2>No emails stored yet</h2>
+    <p>{% if mailboxes|selectattr("active")|list %}They appear here after the next read of {{ mailboxes|map(attribute="name")|join(", ") }}.
+       {% else %}Connect Outlook on {{ mailboxes|map(attribute="name")|join(", ") }} and switch it on.{% endif %}</p>
+    <div class="actions">{% for m in mailboxes %}<a class="btn secondary" href="{{ url_for('web.record', key='mailboxes', record_id=m.id) }}">Open {{ m.name }}</a>{% endfor %}</div>
+    {% endif %}
+  </div>
+{% endif %}
+</div>
+</div>
+{% endblock %}

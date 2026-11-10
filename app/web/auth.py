@@ -7,7 +7,7 @@ from flask import flash, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import bp
-from .base import audit
+from .base import audit, safe_next
 from ..core import store
 
 
@@ -52,6 +52,10 @@ def sign_in(sign_out_others=False):
 
 @bp.route("/login", methods=["GET", "POST"])
 def login():
+    """Sign in, then back to the page that asked for it (?next=). Already signed in: straight there."""
+    wanted = safe_next(request.values.get("next"))
+    if session.get("signed_in") and session.get("version") == store.get_setting(g.db, "session_version"):
+        return redirect(wanted or url_for("web.messages"))
     if request.method == "POST":
         now = datetime.now(timezone.utc)
         address = request.remote_addr or "?"
@@ -59,13 +63,13 @@ def login():
         if len(recent) >= MAX_FAILURES:
             minutes = int((LOCKOUT - (now - recent[0])).total_seconds() // 60) + 1
             flash(f"Too many wrong passwords. Try again in {minutes} minutes.", "error")
-            return render_template("auth/password.html", setup=False), 429
+            return render_template("auth/password.html", setup=False, next=wanted), 429
         stored = store.get_setting(g.db, "admin_password_hash")
         if stored and check_password_hash(stored, request.form.get("password", "")):
             _failures.pop(address, None)
             sign_in()
             audit("security", "Signed in")
-            return redirect(url_for("web.messages"))
+            return redirect(wanted or url_for("web.messages"))
         _failures[address] = recent + [now]
         if len(_failures[address]) >= MAX_FAILURES:
             audit("security", f"Locked out for {LOCKOUT.seconds // 60} minutes after {MAX_FAILURES} wrong passwords",
@@ -73,7 +77,7 @@ def login():
         else:
             audit("security", "Wrong password", level="warning")
         flash("Wrong password.", "error")
-    return render_template("auth/password.html", setup=False)
+    return render_template("auth/password.html", setup=False, next=wanted)
 
 
 @bp.route("/password", methods=["GET", "POST"])

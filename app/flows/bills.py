@@ -27,12 +27,24 @@ def _keys(text):
     return {normalize_identifier(part) for part in re.split(r"[,;/&\n]", text or "")} - {""}
 
 
+# A tyre size (235/40ZR19, LT225/75R16, 295/75R22.5) or a wheel size (18X8.5), as printed.
+_SIZE = re.compile(r"(?<![\w/])(?:LT|P)?(\d{2,3}(?:/\d{2,3})?)\s*Z?R\s*(\d{2}(?:\.\d)?)(?!\d)|(?<![\w.])(\d{2}(?:\.\d)?)\s*X\s*(\d{1,2}(?:\.\d{1,2})?)(?![\d.])",
+                   re.IGNORECASE)
+
+
+def sizes(text):
+    """The sizes a text prints, written one way: 235/40R19 for 235/40ZR19, 18X8.5 for 18 x 8.5."""
+    return {f"{m[0]}R{m[1]}" if m[0] else f"{m[2]}X{m[3]}" for m in _SIZE.findall(text or "")}
+
+
 class BillMatcher:
     def __init__(self, odoo, company_id, mappings):
         self.odoo = odoo
         self.company_id = company_id
         self.mappings = mappings
         self._po_fields = None
+        self._line_fields = None
+        self._products = {}
 
     # ------------------------------------------------------------------
     # From a document
@@ -126,16 +138,48 @@ class BillMatcher:
         if updates:
             self.odoo.write(SCRAPED_BILL, [bill["id"]], updates)
 
-    def add_lines(self, bill_id, lines):
-        """The invoice's lines, from the first document that prints them: a copy adds none."""
+    def add_lines(self, bill_id, lines, replace=False):
+        """The invoice's lines, from the first document that prints them: a copy adds none. replace:
+        the lines read again take the place of the ones there (an invoice re-read)."""
         lines = [line for line in lines or [] if line.get("description") or line.get("amount")]
-        if not lines or self.odoo.call(BILL_LINE, "search_count", [("bill_scrape_id", "=", bill_id)]):
+        if not lines:
             return
+        old = self.odoo.call(BILL_LINE, "search", [("bill_scrape_id", "=", bill_id)])
+        if old and not replace:
+            return
+        if old:
+            self.odoo.call(BILL_LINE, "unlink", old)
+        has_products = "product_id" in self.line_fields()  # the Odoo module before Part Number and Product
         for line in lines:
-            self.odoo.create(BILL_LINE, {"bill_scrape_id": bill_id, "description": line.get("description") or "",
-                                         "quantity": line.get("quantity") or 0,
-                                         "price_unit": line.get("unit_price") or 0,
-                                         "amount": line.get("amount") or 0})
+            values = {"bill_scrape_id": bill_id, "description": line.get("description") or "",
+                      "quantity": line.get("quantity") or 0, "price_unit": line.get("unit_price") or 0,
+                      "amount": line.get("amount") or 0}
+            if has_products:
+                values.update(product_code=line.get("part_number") or False,
+                              product_id=self.product_of(line.get("part_number"), line.get("description")))
+            self.odoo.create(BILL_LINE, values)
+
+    def line_fields(self):
+        if self._line_fields is None:
+            self._line_fields = self.odoo.call(BILL_LINE, "fields_get", attributes=["type"])
+        return self._line_fields
+
+    def product_of(self, part_number, description):
+        """The one product an invoice line names: the internal reference is the part number, or ends with
+        it (ARROYOAGS089 for AGS089); when the line prints a size, the product's name must print it too.
+        False when none fits, or several do."""
+        code = normalize_identifier(part_number)
+        if len(code) < 4:
+            return False
+        key = (code, frozenset(sizes(description)))
+        if key not in self._products:
+            found = [p for p in self.odoo.search_read("product.product", [("default_code", "=ilike", f"%{code}")],
+                                                      ["default_code", "name"], limit=50)
+                     if normalize_identifier(p["default_code"]).endswith(code)]
+            if key[1]:
+                found = [p for p in found if sizes(p["name"]) & key[1]]
+            self._products[key] = found[0]["id"] if len(found) == 1 else False
+        return self._products[key]
 
     # ------------------------------------------------------------------
     # Matching

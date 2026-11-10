@@ -1,0 +1,70 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel %}
+{% from "payables/_tabs.html" import payables_tabs with context %}
+{% block content %}
+{{ control_panel("Freight Payables", intro="What each Freight Payables mailbox produces, and where its workbooks are saved.") }}
+{{ payables_tabs(tab) }}
+
+{% if not shared %}
+<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>Exports aren't set up on this computer yet,
+  so no export folder can be chosen. Ask the administrator.</span></div>
+{% endif %}
+{% if suggestions %}<datalist id="export-folders">{% for f in suggestions %}<option value="{{ f }}">{% endfor %}</datalist>{% endif %}
+
+{% for mailbox, s in mailboxes %}
+<form class="card" method="post" action="{{ url_for('web.payables_settings') }}" style="margin-bottom:20px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="mailbox_id" value="{{ mailbox.id }}">
+  <div class="card-head"><div><h2>{{ mailbox.name }}</h2>
+    <p>{{ "Reading" if mailbox.active else "Switched off" }}. <a href="{{ url_for('web.record', key='mailboxes', record_id=mailbox.id) }}">Mailbox settings</a></p></div></div>
+  <div class="card-body">
+    <div class="form-grid">
+      <div class="field"><label class="switch"><input type="checkbox" name="invoices_enabled" {% if s.invoices_enabled %}checked{% endif %}>
+        <span><b>Invoices</b><span class="help">Reads the freight invoices into the consolidated invoice workbook.</span></span></label></div>
+      <div class="field"><label class="switch"><input type="checkbox" name="audit_enabled" {% if s.audit_enabled %}checked{% endif %}>
+        <span><b>Audit</b><span class="help">Checks every invoice against the shipping notices into the Freight Payable workbook.</span></span></label></div>
+      <div class="field wide"><label for="export_folder-{{ mailbox.id }}">Save the workbooks in</label>
+        {% if shared %}
+        <div class="input-prefix"><span>{{ shared }} \</span>
+          <input id="export_folder-{{ mailbox.id }}" name="export_folder" value="{{ s.export_folder or default_folder }}"
+                 list="export-folders" autocomplete="off" spellcheck="false"></div>
+        <div class="help">{% if s.export_folder %}Saved in {{ full_path(s.export_folder) }}. {% endif %}Pick a folder in {{ shared }}, or type
+          a new one: it's created for you. Each export goes in a new folder inside it: Run 1, Run 2, and so on.</div>
+        {% else %}<input id="export_folder-{{ mailbox.id }}" disabled placeholder="Not set up on this computer">{% endif %}</div>
+    </div>
+
+    <h3 class="o-group-title" style="margin:28px 0 4px">Automatic export</h3>
+    <p class="help" style="margin:0 0 4px">Like Odoo's scheduled actions: the next export is worked out after each one.
+      Exports themselves are still being built, so nothing runs yet; this schedule is kept and starts then.</p>
+    {% set next_id = "export_next-" ~ mailbox.id %}
+    <div class="form-grid">
+      <div class="field wide"><label class="switch"><input type="checkbox" name="export_auto" {% if s.export_auto %}checked{% endif %}>
+        <span><b>Export automatically</b><span class="help">Off for a new mailbox. Each export goes in the next Run folder.</span></span></label></div>
+      <div class="field"><label for="export_every-{{ mailbox.id }}">Repeat every</label>
+        <div class="input-pair">
+          <input id="export_every-{{ mailbox.id }}" name="export_every" type="number" min="1" max="999" value="{{ s.export_every or 1 }}" inputmode="numeric">
+          <select name="export_unit" aria-label="Unit">
+            {% for key, label in units.items() %}<option value="{{ key }}" {% if s.export_unit == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="help">Once only: exports at the next export time, then switches itself off.</div></div>
+      <div class="field"><label for="{{ next_id }}-local">Next export</label>
+        <input id="{{ next_id }}-local" name="export_next_local" type="datetime-local" data-utc-for="{{ next_id }}"
+               {% if s.export_next %}data-utc="{{ s.export_next|replace(' ', 'T') }}Z" value="{{ s.export_next[:16]|replace(' ', 'T') }}"{% endif %}>
+        <input type="hidden" id="{{ next_id }}" name="export_next">
+        <div class="help">Your time. Leave empty to start one interval from now.
+          {% if s.export_last_at %}Last export: {{ s.export_last_run }}, {{ s.export_last_at|when }}.{% else %}No export yet.{% endif %}</div></div>
+    </div>
+    <div class="actions" style="margin-top:20px"><button class="btn">Save</button></div>
+  </div>
+</form>
+{% else %}
+<div class="card"><div class="empty">
+  <div class="empty-icon">{{ icon("sliders") }}</div>
+  <h2>No Freight Payables mailbox yet</h2>
+  <p>Add a mailbox with the purpose Freight Payables first; its settings appear here.</p>
+  <div class="actions"><a class="btn" href="{{ url_for('web.record', key='mailboxes') }}">{{ icon("plus") }} Add mailbox</a></div>
+</div></div>
+{% endfor %}
+{% endblock %}

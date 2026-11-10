@@ -46,14 +46,16 @@ FORMS = {
                   tip="A password for that Azure app, made under Certificates & secrets. Needed to connect "
                       "Outlook and to stay connected. When it expires in Azure, make a new one and paste it here."),
             Field("start_from", "Read mail received from", "date",
-                  help="Mail received before this date is never read (UTC)", group="Reading",
+                  help="Reading starts on this date (UTC); earlier mail is never read", group="Reading",
                   tip="Set this to the day you switch over from the old Odoo module, so mail it already "
-                      "imported is not imported again."),
+                      "imported is not imported again. Reading starts here however far back it is; "
+                      "Look back is then not used."),
             Field("folder", "Folder", help="Leave empty to read every folder", group="Reading",
                   tip="The Outlook folder to read, for example Inbox or a subfolder name."),
             Field("fetch_window_days", "Look back (days)", "int", group="Reading",
-                  tip="How far back each read looks. Mail already read is skipped, so this only matters for "
-                      "mail that arrives late or was missed while the service was off."),
+                  help="Only when Read mail received from is empty",
+                  tip="How far back a read looks when the mailbox has no start date. With a start date, "
+                      "reading starts on that date instead."),
             Field("batch_size", "New emails per run", "int", group="Reading",
                   tip="The most new emails saved in one read. The rest is picked up on the next read."),
             Field("auto_sync", "Read automatically", "bool", group="Reading",

@@ -8,6 +8,8 @@ linking or drafting the freight PO is a button in Odoo.
 
 import json
 import re
+import unicodedata
+from datetime import date, datetime, timedelta
 
 from ..documents.text import find_labelled_booking_number, normalize_identifier, parse_date
 
@@ -38,7 +40,8 @@ SCHEDULE_FIELDS = ("vessel", "voyage", "port_of_loading", "port_of_discharge", "
 _READ = (
     "booking_number", "forwarder_id", "forwarder_name", "factory_id", "factory_name", "master_bl",
     "master_bl_confirmed", "master_bl_assumed", "house_bl", "house_bl_confirmed", "house_bl_assumed",
-    *SCHEDULE_FIELDS, "freight_currency_id", "freight_cost", "additional_charges", "freight_mode",
+    *SCHEDULE_FIELDS, *(f"{name}_source" for name in UPDATED_BY_CONFIRMATION),
+    "freight_currency_id", "freight_cost", "additional_charges", "freight_mode",
     "freight_product_id", "mapping_freight_product_id", "purchase_order_id", "warehouse_id",
 )
 
@@ -46,6 +49,125 @@ _READ = (
 def m2o_id(value):
     """The id of a many2one as XML-RPC returns it ([id, name] or False)."""
     return value[0] if value else False
+
+
+# ── the same value, written another way ──────────────────────────────
+
+# Ocean carriers. Their own documents name the carrier where a forwarder would be: never a dispute.
+CARRIER = re.compile(r"HAPAG|MAERSK|\bMSC\b|MEDITERRANEAN SHIPPING|CMA[\s-]*CGM|COSCO|OCEAN NETWORK EXPRESS|\bONE\b"
+                     r"|EVERGREEN|YANG MING|\bHMM\b|HYUNDAI MERCHANT|\bZIM\b|WAN HAI|\bOOCL\b|ORIENT OVERSEAS"
+                     r"|\bPIL\b|PACIFIC INTERNATIONAL LINES|\bSEALAND\b", re.IGNORECASE)
+# Carrier codes that start bills and bookings: ONEYSELGE0071900 is booking SELGE0071900.
+_SCAC = re.compile(r"^(ONEY|MEDU|MSCU|HLCU|HDMU|MAEU|COSU|CMDU|EGLV|OOLU|YMLU|YMJA|ZIMU|WHLC|EMIV|SMLM|KMTC|SUDU|APLU)")
+# Words a company, port or vessel name carries that say nothing about which one it is.
+_LEGAL = {"CO", "COMPANY", "CORP", "CORPORATION", "LTD", "LIMITED", "LLC", "INC", "PTE", "PVT", "SA", "AG", "GMBH",
+          "GROUP", "THE", "AND", "OF", "INTERNATIONAL", "TNHH", "CONG", "TY", "CTY", "MTV", "JSC"}
+_PLACES = {"US", "USA", "UNITED", "STATES", "AMERICA", "VN", "VIET", "NAM", "VIETNAM", "CN", "CHINA", "TH",
+           "THAILAND", "MA", "MOROCCO", "MX", "MEXICO", "CA", "CANADA", "KR", "KOREA", "TW", "TAIWAN", "IN", "INDIA",
+           "PK", "PAKISTAN", "SG", "SINGAPORE", "MY", "MALAYSIA", "ID", "INDONESIA", "COUNTRY"}
+_US_STATES = {"AL", "AK", "AZ", "AR", "CO", "CT", "DE", "FL", "GA", "HI", "IA", "IL", "KS", "KY", "LA", "MD", "ME",
+              "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA",
+              "RI", "SC", "SD", "TN", "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY"}
+_OPERATORS = {"MAERSK", "HAPAG", "LLOYD", "MSC", "CMA", "CGM", "COSCO", "MV", "M", "V", "VESSEL"}
+
+
+def _words(text):
+    plain = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
+    return re.findall(r"[A-Z0-9]+", plain.upper())
+
+
+def port_key(text):
+    """A port as its city: 'USCHS CHARLESTON, SC' and 'CHARLESTON, SC, US' are CHARLESTON; HAI PHONG is HAIPHONG."""
+    words = _words(text)
+    if len(words) > 1 and re.fullmatch(r"[A-Z]{2}[A-Z0-9]{3}", words[0]):
+        words = words[1:]  # the UN/LOCODE printed before the name
+    return "".join(w for w in words if w not in _PLACES and w not in _US_STATES and w not in ("PORT", "CITY"))
+
+
+def party_key(text):
+    """A company by the words that name it: TIANSHI LOGISTICS (VIETNAM) CO.,LTD is TIANSHILOGISTICS."""
+    return "".join(w for w in _words(text) if w not in _LEGAL and w not in _PLACES)
+
+
+def vessel_key(text):
+    """A vessel by its own name: MAERSK MEMPHIS and HAPAG-LLOYD MEMPHIS are MEMPHIS."""
+    return "".join(w for w in _words(text) if w not in _OPERATORS)
+
+
+def _contains(a, b):
+    return bool(a and b) and min(len(a), len(b)) >= 4 and (a in b or b in a)
+
+
+def same_value(name, old, new, mappings=()):
+    """Whether two values of a booking field name the same thing, written another way."""
+    if name in ("port_of_loading", "port_of_discharge"):
+        return _contains(port_key(old), port_key(new))
+    if name in ("forwarder_name", "factory_name"):
+        role = name.split("_")[0]
+        a, b = resolve_mapping(mappings, role, name=old), resolve_mapping(mappings, role, name=new)
+        if a and a is b:
+            return True
+        return _contains(party_key(old), party_key(new))
+    if name == "vessel":
+        return vessel_key(old) == vessel_key(new) != ""
+    return False
+
+
+def same_identifier(a, b):
+    """Booking and bill numbers that are the same apart from the carrier code before them, or one
+    character read wrong, lost or added (from the tenth character: short numbers must match exactly)."""
+    a, b = _SCAC.sub("", normalize_identifier(a)), _SCAC.sub("", normalize_identifier(b))
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if min(len(a), len(b)) < 9 or abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) == 1
+    short, long_ = sorted((a, b), key=len)
+    return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
+
+
+# ── impossible values ────────────────────────────────────────────────
+
+# A date further than this from the email that brought it is a misreading.
+# A schedule document comes before the vessel sails or soon after it arrives, never months after the departure.
+_DATE_WINDOW = {"etd": (timedelta(days=100), timedelta(days=200)), "eta": (timedelta(days=90), timedelta(days=270))}
+
+
+def plausible_date(name, iso, received):
+    """The date as it can be for a document received then, else None. A date with its day and month
+    read the wrong way round (2026-06-11 for 11 June when 6 November fits) is turned back."""
+    if not iso:
+        return None
+    try:
+        day = date.fromisoformat(iso)
+        sent = datetime.fromisoformat(str(received).replace("T", " ").rstrip("Z")).date()
+    except (TypeError, ValueError):
+        return iso
+    before, after = _DATE_WINDOW[name]
+    fits = lambda d: sent - before <= d <= sent + after
+    if fits(day):
+        return iso
+    try:
+        swapped = day.replace(month=day.day, day=day.month)
+    except ValueError:
+        return None
+    return swapped.isoformat() if fits(swapped) else None
+
+
+_NOT_A_VESSEL = re.compile(r"DEMURRAGE|DETENTION|CHARGE|INVOICE|TERMINAL|\bPORT\b|\bTBA\b|\bTBN\b|\bN/?A\b", re.I)
+
+
+def plausible_vessel(text):
+    """Not a vessel: a port with its UN/LOCODE (SGSIN SINGAPORE: the code's city part starts the name
+    after it, unlike a vessel such as MAPLE LEAF), a charge, a terminal."""
+    words = _words(text)
+    if not words or _NOT_A_VESSEL.search(text or ""):
+        return False
+    locode = len(words) > 1 and re.fullmatch(r"[A-Z]{2}[A-Z]{3}", words[0]) and words[0][:2] in _PLACES
+    return not (locode and words[1][0] == words[0][2])
 
 
 def resolve_mapping(mappings, role, sender_domain="", name=""):
@@ -67,16 +189,31 @@ def resolve_mapping(mappings, role, sender_domain="", name=""):
     return None
 
 
+class _History:
+    """What a booking's documents said before. Without the pipeline's records nothing is known:
+    the schedule then moves only with a newer booking confirmation, as before."""
+
+    def received(self, booking_id, source):
+        """When the document named ``source`` on this booking was received; None when unknown."""
+        return None
+
+    def pre_carriers(self, booking_id):
+        """The feeder vessels and voyages this booking's documents printed, as identifiers."""
+        return set()
+
+
 class Booker:
     """Consolidates documents for one company. ``newest_confirmation(doc,
     booking_id)`` tells whether ``doc`` is the latest booking confirmation the
-    booking has received; the pipeline answers it from its own records."""
+    booking has received; the pipeline answers it from its own records, and
+    ``history`` (when given) what its documents said before: see _History."""
 
-    def __init__(self, odoo, company_id, mappings, newest_confirmation):
+    def __init__(self, odoo, company_id, mappings, newest_confirmation, history=None):
         self.odoo = odoo
         self.company_id = company_id
         self.mappings = mappings
         self.newest_confirmation = newest_confirmation
+        self.history = history or _History()
         self._labels = None
         self._own_names = None
 
@@ -110,6 +247,8 @@ class Booker:
         for name in ("master_bl", "house_bl"):
             if keys[name]:
                 ids |= set(self._search(["|", (name, "=", keys[name]), ("bl_ids.bl_number", "=", keys[name])]))
+        if not ids:
+            ids = self._nearly(keys.values())
         if not ids and values.get("containers"):
             # A container is reused shipment after shipment: only open bookings count.
             ids |= set(self._search([("container_ids.container_no", "in", values["containers"]),
@@ -130,6 +269,30 @@ class Booker:
         booking_id = ids.pop()
         self.consolidate(booking_id, doc)
         return "done", None, booking_id
+
+    def _nearly(self, keys):
+        """The one booking whose number or bill is one of these written another way (see
+        same_identifier); none when no booking, or several, fit."""
+        ids = set()
+        for key in {k for k in keys if k}:
+            core = _SCAC.sub("", key)
+            if len(core) < 9:
+                continue
+            tail = core[-6:]  # the database narrows by the tail, the comparison decides
+            for booking in self.odoo.search_read(BOOKING, [("company_id", "=", self.company_id), "|", "|", "|",
+                                                           ("booking_number", "ilike", tail), ("master_bl", "ilike", tail),
+                                                           ("house_bl", "ilike", tail), ("bl_ids.bl_number", "ilike", tail)],
+                                                 ["booking_number", "master_bl", "house_bl"]):
+                if any(same_identifier(key, booking[f]) for f in ("booking_number", "master_bl", "house_bl")):
+                    ids.add(booking["id"])
+            if len(core) >= 10:  # one character lost: the tail is not where it was
+                for booking in self.odoo.search_read(BOOKING, [("company_id", "=", self.company_id), "|", "|",
+                                                               ("booking_number", "ilike", core[:8]), ("master_bl", "ilike", core[:8]),
+                                                               ("house_bl", "ilike", core[:8])],
+                                                     ["booking_number", "master_bl", "house_bl"]):
+                    if any(same_identifier(key, booking[f]) for f in ("booking_number", "master_bl", "house_bl")):
+                        ids.add(booking["id"])
+        return ids if len(ids) == 1 else set()
 
     def _may_create(self, doc, number):
         """A booking confirmation creates its booking; another document only
@@ -166,6 +329,7 @@ class _Consolidation:
         self.source = doc["source"]
         self.updates = {}
         self.notes = []
+        self.replaced = set()  # parties whose name this document replaced: their partner is found again
 
     def current(self, name):
         return self.updates[name] if name in self.updates else self.booking[name]
@@ -210,10 +374,17 @@ class _Consolidation:
             self.updates[f"{name}_source"] = self.source
 
     def set(self, name, value):
-        """Fill an empty field; keep the first value and open a conflict for a different one."""
+        """Fill an empty field; keep the first value and open a conflict for a different one, unless it is
+        the same value written another way, the feeder vessel beside the ocean one, a newer document moving
+        the schedule (an older one never disputes it), or a carrier naming itself beside the forwarder."""
         if self.booking.get(f"{name}_confirmed"):
             return
-        value = parse_date(value) if name in ("etd", "eta") else str(value or "").strip()
+        if name in ("etd", "eta"):
+            value = plausible_date(name, parse_date(value), self.doc["received"]) or ""
+        else:
+            value = str(value or "").strip()
+            if name == "vessel" and value and not plausible_vessel(value):
+                return
         if not value:
             return
         old = self.current(name) or ""
@@ -230,10 +401,40 @@ class _Consolidation:
         if a and a in b and not email:
             self.take_value(name, value)  # the same value, stated more fully
             return
+        if same_value(name, old, value, self.booker.mappings):
+            return
+        label = self.booker.labels().get(name, name)
+        if name in ("vessel", "voyage"):
+            feeders = self.booker.history.pre_carriers(self.id)
+            if b in feeders:
+                return  # a bill of lading prints the first (feeder) vessel; the booking keeps the ocean one
+            if a in feeders and not email:
+                self.take_value(name, value)
+                self.notes.append(f"{label} set to the ocean vessel {value} (was the feeder {old}) by {self.source}.")
+                return
+        if name == "forwarder_name":
+            if CARRIER.search(value) and not CARRIER.search(old):
+                return  # the carrier's own document names the carrier; the forwarder stays
+            # Only a mapped forwarder replaces a carrier: an unmapped name may be a shipper misread as forwarder.
+            if CARRIER.search(old) and not CARRIER.search(value) and not email \
+                    and resolve_mapping(self.booker.mappings, "forwarder", name=value):
+                self.take_value(name, value)
+                self.replaced.add("forwarder")
+                self.notes.append(f"Forwarder set to {value} (was the carrier {old}) by {self.source}.")
+                return
+        if name in UPDATED_BY_CONFIRMATION and not email:
+            then = self.booker.history.received(self.id, self.booking.get(f"{name}_source"))
+            now = self.doc.get("received")
+            if then and now and str(now) != str(then):
+                if str(now) > str(then):  # the shipment was re-planned: the later document stands
+                    self.take_value(name, value)
+                    self.notes.append(f"{label} updated from {old} to {value} by {self.source}, "
+                                      f"a later document than {self.booking.get(f'{name}_source')}.")
+                return  # an older document never disputes a newer one
         if name in UPDATED_BY_CONFIRMATION and self.doc["doc_class"] == "booking_confirmation" \
                 and self.booker.newest_confirmation(self.doc, self.id):
             self.take_value(name, value)
-            self.notes.append(f"{self.booker.labels()[name]} updated from {old} to {value} by {self.source}.")
+            self.notes.append(f"{label} updated from {old} to {value} by {self.source}.")
             return
         if not email:  # an email never disputes a document
             self.conflict(name, old, value)
@@ -254,7 +455,7 @@ class _Consolidation:
         if any(own and own in normalize_identifier(name) for own in self.booker.own_names()):
             return  # the importer printed as consignee or booking party
         self.set(f"{role}_name", name)
-        if self.current(f"{role}_id"):
+        if self.current(f"{role}_id") and role not in self.replaced:
             return
         domain = (self.doc["sender"] or "").rpartition("@")[2]
         by_domain = resolve_mapping(self.booker.mappings, role, sender_domain=domain)

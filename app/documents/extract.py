@@ -27,8 +27,9 @@ FREIGHT_SCHEMA = {
     "properties": {
         "doc_class": {"type": "string", "enum": list(FREIGHT_CLASSES)},
         **{name: _nullable("string") for name in (
-            "booking_number", "master_bl", "house_bl", "vessel", "voyage", "port_of_loading",
-            "port_of_discharge", "etd", "eta", "forwarder_name", "factory_name", "currency")},
+            "booking_number", "master_bl", "house_bl", "vessel", "voyage", "pre_carrier_vessel",
+            "pre_carrier_voyage", "port_of_loading", "port_of_discharge", "etd", "eta", "forwarder_name",
+            "factory_name", "currency")},
         "containers": {"type": "array", "items": {"type": "string"}},
         "invoices": {"type": "array", "items": {"type": "string"}},
         "freight_cost": _nullable("number"),
@@ -47,9 +48,10 @@ INVOICE_SCHEMA = {
         "containers": {"type": "array", "items": {"type": "string"}},
         "lines": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["description", "quantity", "unit_price", "amount"],
-            "properties": {"description": _nullable("string"), "quantity": _nullable("number"),
-                           "unit_price": _nullable("number"), "amount": _nullable("number")}}},
+            "required": ["description", "part_number", "quantity", "unit_price", "amount"],
+            "properties": {"description": _nullable("string"), "part_number": _nullable("string"),
+                           "quantity": _nullable("number"), "unit_price": _nullable("number"),
+                           "amount": _nullable("number")}}},
     },
 }
 for _schema in (FREIGHT_SCHEMA, INVOICE_SCHEMA):
@@ -91,6 +93,9 @@ def checked(parsed, text):
     for key in ("etd", "eta", "invoice_date"):
         if key in values and not date_appears_in(text, values[key]):
             values.pop(key)
+    for line in values.get("lines") or []:
+        if line.get("part_number") and not appears_in(text, line["part_number"]):
+            line["part_number"] = None
     return values
 
 

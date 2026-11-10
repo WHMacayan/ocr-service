@@ -108,6 +108,14 @@ CREATE TABLE IF NOT EXISTS file (
 );
 CREATE INDEX IF NOT EXISTS file_message ON file (message_id);
 
+-- A supplier invoice (Bill Matching) from a forwarder or carrier, read once more as a freight document:
+-- its freight cost goes to its booking. Kept so the AI is never asked twice.
+CREATE TABLE IF NOT EXISTS file_freight_reading (
+    file_id INTEGER PRIMARY KEY REFERENCES file(id) ON DELETE CASCADE,
+    doc_class TEXT,
+    extracted TEXT                                     -- JSON
+);
+
 -- Where an email and its files stand in each Odoo connection. No row yet: not processed there.
 -- message.state and file.state/note/odoo_id summarise these for the lists (see store.refresh_messages).
 CREATE TABLE IF NOT EXISTS message_target (
@@ -193,7 +201,15 @@ CREATE TABLE IF NOT EXISTS subject_format (
 CREATE TABLE IF NOT EXISTS payables_setting (
     mailbox_id INTEGER PRIMARY KEY REFERENCES mailbox(id) ON DELETE CASCADE,
     invoices_enabled INTEGER NOT NULL DEFAULT 1,       -- invoice flow: Consolidated_Invoice.xlsx
-    audit_enabled INTEGER NOT NULL DEFAULT 1           -- audit flow: Freight Payable.xlsx
+    audit_enabled INTEGER NOT NULL DEFAULT 1,          -- audit flow: Freight Payable.xlsx
+    export_folder TEXT,                                -- as the PC shows it; see app/payables/exports.py
+    -- automatic export, as Odoo's Scheduled Actions (app/payables/schedule.py); off for a new mailbox
+    export_auto INTEGER NOT NULL DEFAULT 0,
+    export_every INTEGER NOT NULL DEFAULT 1,
+    export_unit TEXT NOT NULL DEFAULT 'days',          -- minutes | hours | days | weeks | months | once
+    export_next TEXT,                                  -- UTC
+    export_last_at TEXT,                               -- UTC
+    export_last_run TEXT                               -- the Run folder the last export made
 );
 
 CREATE TABLE IF NOT EXISTS payables_message (

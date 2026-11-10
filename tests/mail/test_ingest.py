@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import store
-from app.mail.ingest import MailboxSync, dedupe_key, window_filter
+from app.mail.ingest import MailboxSync, dedupe_key, window_days, window_filter
 
 from fakes import PDF, FakeGraph, attachment, mailbox, message
 
@@ -143,3 +143,10 @@ def test_window_starts_on_monday_or_start_date_or_resume_point():
         "receivedDateTime ge 2026-10-28T00:00:00Z"
     resumed = dict(box, start_from="2026-10-28 00:00:00", fetch_resume_from="2026-10-30 09:15:00")
     assert window_filter(resumed, NOW) == "receivedDateTime ge 2026-10-30T09:15:00Z"
+
+
+def test_a_start_date_further_back_than_the_look_back_is_where_reading_starts():
+    box = {"fetch_window_days": 14, "start_from": "2026-09-01 00:00:00"}
+    assert window_filter(box, NOW) == "receivedDateTime ge 2026-09-01T00:00:00Z"
+    assert window_days(box, NOW) == 61                                     # the page limit covers it
+    assert window_days({"fetch_window_days": 14}, NOW) == 20               # from Monday 12 Oct, as before

@@ -104,6 +104,23 @@ function init(root) {
     tip.classList.toggle("open", open);
   }));
 
+  // A date and time typed in the viewer's time zone, sent to the service in UTC (the time it keeps).
+  $$(root, "input[data-utc-for]").forEach(box => {
+    const hidden = document.getElementById(box.dataset.utcFor);
+    const stored = box.dataset.utc && new Date(box.dataset.utc);
+    if (stored && !isNaN(stored)) {
+      box.value = `${stored.getFullYear()}-${pad(stored.getMonth() + 1)}-${pad(stored.getDate())}`
+        + `T${pad(stored.getHours())}:${pad(stored.getMinutes())}`;
+    }
+    const sync = () => {
+      const local = box.value ? new Date(box.value) : null;
+      hidden.value = local && !isNaN(local) ? local.toISOString().slice(0, 16).replace("T", " ") : "";
+    };
+    sync();
+    box.addEventListener("input", sync);
+    box.addEventListener("change", sync);
+  });
+
   // Instant filter on short lists; a group's header goes when none of its rows is left.
   $$(root, "[data-filter]").forEach(box => {
     box.addEventListener("input", () => {

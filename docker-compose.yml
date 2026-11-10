@@ -7,6 +7,17 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ocr-data:/data
+      # The one folder Freight Payables may write its workbooks in (app/payables/exports.py). None is
+      # shared here: docker-compose.override.yml on each PC or server shares its own folder at /exports
+      # and names it in PAYABLES_EXPORT_HOST (see the deployment guide).
+      - &exports
+        type: bind
+        source: ./exports
+        target: /exports
+        bind:
+          create_host_path: true
+    environment: &exports_env
+      PAYABLES_EXPORT_HOST: ""
     # The local Odoo answers at katana.local on this PC (hosts file -> nginx on port 80).
     extra_hosts: &hosts
       - "katana.local:host-gateway"
@@ -16,10 +27,34 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # One worker per mailbox purpose, side by side: a backlog in one never delays the others.
+  # Each reads its own mailboxes and processes their files (WORKER_PURPOSES, app/worker.py).
   worker:
     build: .
     volumes:
       - ocr-data:/data
+    environment:
+      WORKER_PURPOSES: freight_booking
+    extra_hosts: *hosts
+    restart: unless-stopped
+    logging: *logging
+
+  bills-worker:
+    build: .
+    volumes:
+      - ocr-data:/data
+    environment:
+      WORKER_PURPOSES: bill_matching
+    extra_hosts: *hosts
+    restart: unless-stopped
+    logging: *logging
+
+  customs-worker:
+    build: .
+    volumes:
+      - ocr-data:/data
+    environment:
+      WORKER_PURPOSES: customs_entry
     extra_hosts: *hosts
     restart: unless-stopped
     logging: *logging
@@ -30,6 +65,8 @@ services:
     command: flask --app app payables-worker
     volumes:
       - ocr-data:/data
+      - *exports
+    environment: *exports_env
     extra_hosts: *hosts
     restart: unless-stopped
     logging: *logging

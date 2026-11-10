@@ -1,0 +1,10 @@
+{% from "layout/_icons.html" import icon %}
+{# The Freight Payables tabs. Invoices, Audit and Exports join them as those flows are built. #}
+{% macro payables_tabs(tab) -%}
+{%- set n = payables_counts() %}
+<nav class="tabs" aria-label="Freight Payables">
+  <a href="{{ url_for('web.payables_emails') }}" {% if tab == "emails" %}aria-current="true"{% endif %}>{{ icon("inbox") }} Emails <span class="n">{{ n.emails }}</span></a>
+  <a href="{{ url_for('web.payables_settings') }}" {% if tab == "settings" %}aria-current="true"{% endif %}>{{ icon("sliders") }} Settings</a>
+</nav>
+<div style="height:20px"></div>
+{%- endmacro %}

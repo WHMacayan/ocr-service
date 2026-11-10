@@ -1,15 +1,18 @@
 """Every request: the sign-in check, the form token, security headers, the database; what every page is
 given; the activity log; reaching Odoo."""
 
+import logging
 import secrets
 from urllib.parse import urlparse
 
-from flask import flash, g, redirect, request, session, url_for
+from flask import current_app, flash, g, redirect, request, session, url_for
 
 from . import bp
 from .forms import FORMS
 from ..core import store
 from ..odoo.client import Odoo
+
+_logger = logging.getLogger(__name__)
 
 
 # The route an email takes, in order, then the states off the route.
@@ -33,14 +36,46 @@ def open_db_and_check_login():
     if not store.get_setting(g.db, "admin_password_hash"):
         return redirect(url_for("web.setup"))
     if not session.get("signed_in") or session.get("version") != store.get_setting(g.db, "session_version"):
+        _logger.warning("Sign-in needed for %s %s%s: %s", request.method, request.path,
+                        " (background refresh)" if request.headers.get("X-Live") else "", _why_signed_out())
         # Keep the form token: a background request (the browser's favicon) must not
         # break a login form that is already on the screen.
         token = session.get("csrf")
         session.clear()
         if token:
             session["csrf"] = token
-        return redirect(url_for("web.login"))
+        # Back to this page after signing in; a form posted or a background refresh goes to the home page.
+        wanted = request.full_path.rstrip("?") if request.method == "GET" and not request.headers.get("X-Live") else None
+        return redirect(url_for("web.login", next=wanted if wanted not in ("/", None) else None))
     return None
+
+
+def _why_signed_out():
+    """Why this browser isn't signed in, for the web log: the cause of a sign-in nobody asked for."""
+    if current_app.config["SESSION_COOKIE_NAME"] not in request.cookies:
+        return "the browser sent no login cookie (never signed in here, cleared, or replaced by another site)"
+    if not session:
+        return "the login cookie wasn't accepted (made by another copy of the service, or damaged)"
+    if not session.get("signed_in"):
+        return "the cookie is from before signing in, or from signing out"
+    return "signed out everywhere (the password was changed)"
+
+
+@bp.after_app_request
+def warn_of_big_cookies(response):
+    """Browsers drop a cookie over 4 KB without a word, which would sign you out: say so in the log."""
+    for header in response.headers.getlist("Set-Cookie"):
+        if len(header) > 3800:
+            _logger.warning("A %d-byte cookie was sent for %s; browsers drop cookies over 4 KB", len(header), request.path)
+    return response
+
+
+def safe_next(value):
+    """A page of this site to go to after signing in, or None: never another site (//host or a scheme)."""
+    value = (value or "").strip()
+    if not value.startswith("/") or value.startswith("//") or "\\" in value or urlparse(value).netloc:
+        return None
+    return value
 
 
 def form_page():

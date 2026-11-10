@@ -1,0 +1,59 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel, field_group, group_title %}
+{% block content %}
+{{ control_panel(title, crumbs=[("Freight Payables", url_for('web.payables_emails'))],
+                 badges=[("muted-badge", "Skipped" if message.state == "skipped" else None)]) }}
+
+<div class="o-sheet o-record">
+  <div class="o-groups">
+    {{ field_group("Email", [("From", message.sender), ("Received", message.received|when), ("Mailbox", message.mailbox_name)]) }}
+    {% if message.skipped_attachments %}{{ field_group("Not kept", [("Attachments", message.skipped_attachments)]) }}{% endif %}
+  </div>
+
+  <section class="o-group o-wide">
+    {{ group_title("Files", files|length ~ " file" ~ ("s" if files|length != 1 else "")) }}
+    {% if files %}
+    <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>File</th><th>Kind</th><th>Size</th><th></th></tr></thead>
+      <tbody>
+      {% for f in files %}
+      <tr>
+        <td class="cell-main"><span class="primary clip">{{ f.filename or "Unnamed" }}</span>{% if f.is_inline %}<span class="sub">Pasted in the email</span>{% endif %}</td>
+        <td data-label="Kind">{{ f.kind|upper }}</td>
+        <td data-label="Size"><span class="num">{{ "%.0f KB"|format(f.size / 1024) if f.size < 1048576 else "%.1f MB"|format(f.size / 1048576) }}</span></td>
+        <td><a class="btn secondary sm" href="{{ url_for('web.payables_file', message_id=message.id, file_id=f.id) }}" data-full download>Download</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="faint">No file was kept from this email.</p>{% endif %}
+  </section>
+
+  <section class="o-group o-wide">
+    {{ group_title("What this email says", "its own text, without the quoted history") }}
+    <pre class="block" style="white-space:pre-wrap">{{ text or "No text." }}</pre>
+  </section>
+
+  {% if thread|length > 1 %}
+  <section class="o-group o-wide">
+    {{ group_title("Conversation", thread|length ~ " emails, oldest first") }}
+    <div class="table-scroll">
+    <table class="data">
+      <tbody>
+      {% for t in thread %}
+      {% set href = url_for('web.payables_email', message_id=t.id) %}
+      <tr data-href="{{ href }}">
+        <td class="cell-main"><a class="primary clip" href="{{ href }}" {% if t.id == message.id %}aria-current="true"{% endif %}>{{ t.subject or "No subject" }}</a><span class="sub">{{ t.sender }}</span></td>
+        <td data-label="Received"><span class="num">{{ t.received|when }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
