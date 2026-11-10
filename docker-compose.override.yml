@@ -1,0 +1,16 @@
+# This PC only (not in Git). Docker Compose reads it with docker-compose.yml.
+# The one folder Freight Payables may write its workbooks in; export folders are chosen inside it
+# on the Freight Payables > Settings page.
+services:
+  web:
+    volumes:
+      - &exports
+        type: bind
+        source: 'C:\Users\WHMACAYAN\OneDrive - ATV INC'
+        target: /exports
+    environment: &exports_env
+      PAYABLES_EXPORT_HOST: 'C:\Users\WHMACAYAN\OneDrive - ATV INC'
+  payables-worker:
+    volumes:
+      - *exports
+    environment: *exports_env
