@@ -3,7 +3,7 @@
 fills the bill in, matching included. The bill is the record to update: it takes the invoice's number
 and identity, or merges into the bill already holding that invoice.
 
-A file that is not an invoice, has no text, or prints no invoice number is parked as Needs Review with
+A file that is not a commercial invoice, comes from a forwarder, has no text, or prints no invoice number is parked as Needs Review with
 the reason in Match Notes, so it is never read twice. A failure that may pass (OCR programs missing, the
 AI unreachable) leaves it To Read for the next run.
 """
@@ -50,7 +50,7 @@ def _read(run, bill):
     if doc_class is None:
         return _park(odoo, bill["id"], "No readable text in this file.")
     if doc_class != "supplier_invoice":
-        return _park(odoo, bill["id"], "Not an invoice.")
+        return _park(odoo, bill["id"], extract.not_invoice_note(values))
     doc = {"sender": "", "subject": "", "received": None, "doc_class": doc_class, "values": values,
            "source": bill["source"] or attachments[0]["name"] or bill["name"], "file_id": None}
     state, note, _id = run.matcher(bill["company_id"][0]).take(doc, placeholder=bill["id"])

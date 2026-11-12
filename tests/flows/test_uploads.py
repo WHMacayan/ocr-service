@@ -66,10 +66,10 @@ def test_an_invoice_already_there_is_merged_and_the_placeholder_goes(monkeypatch
 def test_what_is_not_an_invoice_or_has_no_number_is_parked_not_read_again(monkeypatch):
     odoo, run = setup()
     first, second = upload(odoo, "a.pdf"), upload(odoo, "b.pdf")
-    reading(monkeypatch, "not_invoice")
+    reading(monkeypatch, "not_invoice", document_type="freight_invoice")
     uploads.read_uploads(run, 10)
     assert odoo.rows("b2b.ocr.scraped.bill")[first]["state"] == "needs_review"
-    assert odoo.rows("b2b.ocr.scraped.bill")[first]["match_notes"] == "Not an invoice."
+    assert odoo.rows("b2b.ocr.scraped.bill")[first]["match_notes"] == "Not a commercial invoice: freight invoice"
 
     odoo.rows("b2b.ocr.scraped.bill")[second]["state"] = "to_read"
     reading(monkeypatch, "supplier_invoice", vendor_name="Good Factory")
@@ -88,3 +88,14 @@ def test_a_failure_that_may_pass_leaves_it_to_read(monkeypatch):
     monkeypatch.setattr(extract, "read_file", broken)
     uploads.read_uploads(run, 10)
     assert odoo.rows("b2b.ocr.scraped.bill")[bill]["state"] == "to_read"
+
+
+def test_an_upload_from_a_forwarder_is_parked_not_matched(monkeypatch):
+    odoo, run = setup()
+    run._matcher.mappings.append(mapping(role="forwarder", document_name="DE WELL", partner_id=8))
+    bill = upload(odoo)
+    reading(monkeypatch, "supplier_invoice", vendor_name="DE WELL CONTAINER SHIPPING", invoice_number="SBKKS1/C")
+    uploads.read_uploads(run, 10)
+    row = odoo.rows("b2b.ocr.scraped.bill")[bill]
+    assert row["state"] == "needs_review"
+    assert row["match_notes"] == "Not a commercial invoice: invoice from forwarder DE WELL CONTAINER SHIPPING"

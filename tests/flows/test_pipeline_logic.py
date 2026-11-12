@@ -259,9 +259,9 @@ def test_invoice_lines_are_not_written():
 
 def test_vendor_is_found_by_the_mappings_printed_name():
     odoo = FakeOdoo()
-    matcher = make_matcher(odoo, [mapping(role="forwarder", document_name="DE WELL", partner_id=7)])
-    _s, _n, scraped_id = matcher.take(doc("supplier_invoice", sender="acc@qin.dewell.com", invoice_number="GRKA-1",
-                                          vendor_name="DE WELL CONTAINER SHIPPING,INC"))
+    matcher = make_matcher(odoo, [mapping(role="factory", document_name="SENTURY TIRE", partner_id=7)])
+    _s, _n, scraped_id = matcher.take(doc("supplier_invoice", sender="ar@sentury.com", invoice_number="F26-1",
+                                          vendor_name="SENTURY TIRE (THAILAND) CO.,LTD"))
     row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
     assert row["partner_id"] == 7 and row["state"] == "ready_for_po"
 
@@ -269,15 +269,32 @@ def test_vendor_is_found_by_the_mappings_printed_name():
 def test_bill_still_without_vendor_is_resolved_again_by_a_later_document():
     odoo = FakeOdoo()
     matcher = make_matcher(odoo)
-    invoice = doc("supplier_invoice", sender="acc@qin.dewell.com", invoice_number="GRKA-1",
-                  vendor_name="DE WELL CONTAINER SHIPPING,INC")
+    invoice = doc("supplier_invoice", sender="ar@sentury.com", invoice_number="F26-1",
+                  vendor_name="SENTURY TIRE (THAILAND) CO.,LTD")
     _s, _n, scraped_id = matcher.take(invoice)
     assert odoo.rows("b2b.ocr.scraped.bill")[scraped_id]["waiting_reason"] == "vendor_not_found"
 
-    matcher.mappings.append(mapping(role="forwarder", document_name="DE WELL", partner_id=7))
+    matcher.mappings.append(mapping(role="factory", document_name="SENTURY TIRE", partner_id=7))
     matcher.take(invoice)
     row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
     assert row["partner_id"] == 7 and row["state"] == "ready_for_po"
+
+
+def test_an_invoice_from_a_forwarder_makes_no_scraped_bill():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="forwarder", document_name="DE WELL", partner_id=8)])
+    state, note, scraped_id = matcher.take(doc("supplier_invoice", sender="non_reply@dewell.com",
+                                               invoice_number="SBKKS0026907/C", vendor_name="De Well Container Shipping Inc."))
+    assert (state, scraped_id) == ("skipped", None)
+    assert note == "Not a commercial invoice: invoice from forwarder De Well Container Shipping Inc."
+    assert not odoo.rows("b2b.ocr.scraped.bill")
+
+
+def test_a_partner_mapped_as_forwarder_and_factory_still_gets_its_bill():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="forwarder", sender_domain="both.com", partner_id=7),
+                                  mapping(role="factory", sender_domain="both.com", partner_id=7)])
+    assert matcher.take(doc("supplier_invoice", sender="ar@both.com", invoice_number="INV-3"))[0] == "done"
 
 
 def found_po_with_bill(bill_state):

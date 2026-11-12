@@ -1,8 +1,8 @@
-"""Scraped Bills: one b2b.ocr.scraped.bill per supplier invoice (vendor +
-invoice number), matched automatically: the vendor's bill (posted, then draft); when none fits,
-the purchase order, then that order's bill; when no order fits either, the bill is parked as
-Ready to Create PO. The service never creates a purchase order (parked idea, see README) and
-only suggests: confirming the bill or order found is a button in Odoo.
+"""Scraped Bills: one b2b.ocr.scraped.bill per commercial invoice (vendor + invoice number; never
+from a vendor mapped as a forwarder), matched automatically: the vendor's bill (posted, then draft);
+when none fits, the purchase order, then that order's bill; when no order fits either, the bill is
+parked as Ready to Create PO. The service never creates a purchase order (parked idea, see README)
+and only suggests: confirming the bill or order found is a button in Odoo.
 """
 
 import re
@@ -44,6 +44,12 @@ class BillMatcher:
         if not number:
             return "waiting", "No invoice number printed.", None
         sender_domain = (doc["sender"] or "").rpartition("@")[2]
+        partner = self.resolve_vendor(values.get("vendor_name"), values.get("vendor_vat"), sender_domain)
+        # Scraped bills take commercial invoices only: a vendor mapped as a forwarder never issues one,
+        # whatever the reading says.
+        if partner and partner in self.forwarders():
+            vendor = values.get("vendor_name") or "a forwarder"
+            return "skipped", f"Not a commercial invoice: invoice from forwarder {vendor}", None
         # The printed vendor, not the resolved partner: a mapping added later
         # must not turn the same invoice into a new one.
         vendor_key = " ".join((values.get("vendor_name") or "").upper().split()) or (
@@ -54,12 +60,9 @@ class BillMatcher:
         if found:
             bill = found[0]
             # Still no vendor: a mapping added since may name it now.
-            partner = not bill["partner_id"] and self.resolve_vendor(
-                values.get("vendor_name"), values.get("vendor_vat"), sender_domain)
-            if partner:
+            if partner and not bill["partner_id"]:
                 self.odoo.write(SCRAPED_BILL, [bill["id"]], {"partner_id": partner})
         else:
-            partner = self.resolve_vendor(values.get("vendor_name"), values.get("vendor_vat"), sender_domain)
             identity = {"name": values["invoice_number"], "external_key": external_key,
                         "partner_id": partner, "sender_email": doc["sender"]}
             if placeholder:
@@ -77,6 +80,14 @@ class BillMatcher:
                 self.odoo.write("ir.attachment", [attachment], {"res_id": bill["id"]})
             self.odoo.call(SCRAPED_BILL, "unlink", [placeholder])
         return "done", None, bill["id"]
+
+    def forwarders(self):
+        """Partners mapped as forwarders and never as factories."""
+        roles = {}
+        for row in self.mappings:
+            if row["active"] and row["partner_id"]:
+                roles.setdefault(row["partner_id"], set()).add(row["role"])
+        return {partner for partner, kinds in roles.items() if kinds == {"forwarder"}}
 
     def resolve_vendor(self, name, vat, sender_domain):
         """Vendor mapping by sender domain or the name it prints, then partner by printed name,

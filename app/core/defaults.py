@@ -34,7 +34,16 @@ Return only values printed on this document; null or an empty list when absent. 
 
 INVOICE_PROMPT = """You read one supplier document for an accounts payable team and extract its invoice facts. Code matches the result to bills and purchase orders afterwards; you never decide that.
 
-- is_invoice: true only for a supplier invoice (commercial, factory, freight, trucking, customs or service invoice); false for statements, packing lists, bills of lading, booking confirmations, quotations, receipts.
+document_type (exactly one):
+- commercial_invoice: the factory's or seller's own invoice for the goods shipped (commercial or factory invoice)
+- freight_invoice: an invoice or debit note billing transport: ocean or air freight, trucking, drayage, delivery, handling
+- service_invoice: any other service invoice: customs, brokerage, duty, storage, inspection, insurance
+- shipping_notice: arrival notice, pre-alert, shipment advice, even when it lists charges or the goods' invoice numbers and value
+- other: statements, packing lists, bills of lading, booking confirmations, quotations, receipts, anything else
+Decide by what is charged. A commercial_invoice charges for the goods themselves: product lines with quantities and unit prices. An invoice whose charges are freight, handling, customs or other fees is a freight_invoice or service_invoice, even when it is titled just "Invoice" and describes the goods, the shipper, the PO or the shipper's invoice number. A forwarder, carrier or broker never issues a commercial_invoice.
+
+- document_name: what this document actually is, in 2 to 6 plain words, e.g. "commercial invoice", "ocean freight invoice", "trucking invoice", "customs brokerage invoice", "arrival notice", "customs entry summary (CBP 7501)", "ACH payment statement", "packing list", "bill of lading".
+- invoice_number: the document's own invoice number, never one it only quotes.
 - The vendor is the issuer of the invoice, never the buyer, consignee or bill-to party.
 - Copy values exactly as printed; null when not printed. Never guess or calculate.
 - invoice_date: YYYY-MM-DD. currency: ISO code as printed or clearly shown by its symbol.
@@ -45,7 +54,9 @@ INVOICE_PROMPT = """You read one supplier document for an accounts payable team 
 # characters). A saved prompt that is one of them was never edited, so it moves to the current default;
 # a prompt changed on the settings page is kept.
 EARLIER_PROMPTS = {
-    "invoice_prompt": {"6302e111dea481aa", "4502e6950b7a3818", "74a2b0fc8910a85b"},
+    "invoice_prompt": {"6302e111dea481aa", "4502e6950b7a3818", "74a2b0fc8910a85b",
+                       "c9d78c95bab7ad6e", "38cf731397d6934a",
+                       "f0ecefc3114f3f05"},
     "freight_prompt": {"e33e906ba288143f"},
 }
 

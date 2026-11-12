@@ -237,7 +237,7 @@ class _Run:
                 return "skipped", f"Not relevant: {doc['doc_class']}.", None
             return self.booker(message["company_id"]).take(doc)
         if doc["doc_class"] != "supplier_invoice":
-            return "skipped", "Not an invoice.", None
+            return "skipped", extract.not_invoice_note(doc["values"]), None
         return self.matcher(message["company_id"]).take(doc)
 
     def _file(self, file, state, note, odoo_id=None):
