@@ -45,6 +45,7 @@ def booking_rows(odoo, ids):
     emails_per = dict(g.db.execute(
         f"SELECT record_id, COUNT(DISTINCT message_id) FROM odoo_change c WHERE model = ? AND {mine} GROUP BY record_id",
         (booking_compare.BOOKING, *args)).fetchall())
+    times = store.record_times(g.db, booking_compare.BOOKING, list(ids))
     rows = []
     for booking_id in ids:
         mine, theirs = written.get(booking_id, {}), odoo_rows.get(booking_id)
@@ -54,6 +55,7 @@ def booking_rows(odoo, ids):
                      "emails": emails_per.get(booking_id, 0), "missing_in_odoo": bool(odoo_rows) and theirs is None,
                      **{f"{f}_shown": booking_compare.shown((theirs or {}).get(f), info.get(f))
                         for f in ("state", "factory_id", "forwarder_id", "etd", "eta", "port_of_loading", "port_of_discharge")}})
+        rows[-1]["created"], rows[-1]["modified"] = times.get(booking_id, (None, None))
         rows[-1]["check"] = check(rows[-1])
     return rows, error
 
@@ -131,4 +133,5 @@ def booking(booking_id):
         made_by_service=booking_compare.created_children(g.db, booking_id), error=error, steps=steps,
         state_label=booking_compare.shown((odoo_row or {}).get("state"), info.get("state")),
         odoo_link=f"{odoo_url}/web#model={booking_compare.BOOKING}&id={booking_id}&view_type=form",
-        differs=sum(1 for _t, rows in sections for r in rows if r["state"] == "differs"))
+        differs=sum(1 for _t, rows in sections for r in rows if r["state"] == "differs"),
+        times=store.record_times(g.db, booking_compare.BOOKING, [booking_id]).get(booking_id, (None, None)))

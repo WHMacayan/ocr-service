@@ -2,17 +2,19 @@
 
 PAYABLES_TABLES = {"payables_setting", "payables_message", "payables_file", "payables_message_file"}
 
-# The layouts before Freight Payables was added (HEAD ae162f4).
+# The layouts before Freight Payables was added (HEAD ae162f4), plus the record times added after it
+# (store.TIMED_TABLES), appended at the end.
 EXISTING = {
     "mailbox": ["id", "name", "active", "purpose", "company_id", "booking_number_pattern", "tenant_id",
                 "client_id", "client_secret", "refresh_token", "access_token", "token_expires_at", "auto_sync",
                 "sync_interval", "sync_requested", "batch_size", "folder", "fetch_window_days", "start_from",
                 "fetch_resume_from", "group_address", "sender_filter", "subject_keyword", "skip_sender_domains",
-                "status", "last_sync", "last_error", "group_miss_note", "sender_domains"],
+                "status", "last_sync", "last_error", "group_miss_note", "sender_domains", "created_at", "updated_at"],
     "message": ["id", "mailbox_id", "dedupe_key", "graph_message_id", "internet_message_id", "conversation_id",
                 "subject", "sender", "sender_domain", "received", "body_html", "body_text", "skipped_attachments",
-                "state", "attempts", "note", "email_done", "processed_at", "created_at"],
-    "file": ["id", "message_id", "filename", "sha256", "path", "doc_class", "extracted", "state", "note", "odoo_id"],
+                "state", "attempts", "note", "email_done", "processed_at", "created_at", "updated_at"],
+    "file": ["id", "message_id", "filename", "sha256", "path", "doc_class", "extracted", "state", "note", "odoo_id",
+             "created_at", "updated_at"],
 }
 
 

@@ -58,11 +58,70 @@ def connect(path=None):
         for table, column, kind in ADDED_COLUMNS:
             if column not in {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+        _record_times(db)
         db.executemany("INSERT OR IGNORE INTO setting (key, value) VALUES (?, ?)",
                        defaults.DEFAULT_SETTINGS.items())
         _upgrade_prompts(db)
         _move_single_connection(db)
     return db
+
+
+# The service's own records, with when each was created and last modified (UTC), kept by triggers so no
+# code path has to remember them. A row saved with nothing changed keeps its time; the columns a run
+# rewrites on its own (tokens, sync status, last check) do not count as a change.
+TIMED_TABLES = {
+    "mailbox": ("access_token", "refresh_token", "token_expires_at", "status", "last_sync", "last_error",
+                "sync_requested", "fetch_resume_from", "group_miss_note"),
+    "odoo_connection": ("last_check_at", "last_check_note"),
+    "message": (),
+    "file": (),
+    "vendor_mapping": (),
+    "subject_format": (),
+    "payables_message": (),
+}
+
+
+def _record_times(db):
+    """created_at and updated_at on every timed table, and the triggers that fill them. The triggers are
+    made again at every start, so a column added since is compared too."""
+    for table, ignored in TIMED_TABLES.items():
+        columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+        for column in ("created_at", "updated_at"):
+            if column not in columns:
+                # SQLite adds no column with a CURRENT_TIMESTAMP default: the insert trigger fills it.
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+        # Rows from before: the email's own times where there are some, else left empty (not known).
+        if table == "message":
+            db.execute("UPDATE message SET updated_at = COALESCE(processed_at, created_at) WHERE updated_at IS NULL")
+        elif table == "payables_message":
+            db.execute("UPDATE payables_message SET updated_at = created_at WHERE updated_at IS NULL")
+        elif table == "file":
+            db.execute("UPDATE file SET created_at = (SELECT m.created_at FROM message m WHERE m.id = file.message_id), "
+                       "updated_at = (SELECT COALESCE(m.processed_at, m.created_at) FROM message m "
+                       "WHERE m.id = file.message_id) WHERE created_at IS NULL")
+        watched = sorted(columns - {"id", "created_at", "updated_at"} - set(ignored))
+        changed = " OR ".join(f'NEW."{c}" IS NOT OLD."{c}"' for c in watched) or "0"
+        db.execute(f"DROP TRIGGER IF EXISTS {table}_created")
+        db.execute(f"DROP TRIGGER IF EXISTS {table}_updated")
+        db.execute(f"CREATE TRIGGER {table}_created AFTER INSERT ON {table} "
+                   f"WHEN NEW.created_at IS NULL OR NEW.updated_at IS NULL BEGIN "
+                   f"UPDATE {table} SET created_at = COALESCE(NEW.created_at, CURRENT_TIMESTAMP), "
+                   f"updated_at = COALESCE(NEW.updated_at, NEW.created_at, CURRENT_TIMESTAMP) WHERE rowid = NEW.rowid; END")
+        db.execute(f"CREATE TRIGGER {table}_updated AFTER UPDATE ON {table} "
+                   f"WHEN NEW.updated_at IS OLD.updated_at AND ({changed}) BEGIN "
+                   f"UPDATE {table} SET updated_at = CURRENT_TIMESTAMP WHERE rowid = NEW.rowid; END")
+
+
+def record_times(db, model, ids):
+    """{Odoo record id: (created, modified)}: when the service first and last wrote each record (UTC),
+    from its own log of writes to the reference connection."""
+    if not ids:
+        return {}
+    marks = ", ".join("?" * len(ids))
+    mine, args = reference_changes(db)
+    return {r[0]: (r[1], r[2]) for r in db.execute(
+        f"SELECT record_id, MIN(at), MAX(at) FROM odoo_change c WHERE model = ? AND record_id IN ({marks}) "
+        f"AND {mine} GROUP BY record_id", (model, *ids, *args))}
 
 
 def prompt_fingerprint(text):

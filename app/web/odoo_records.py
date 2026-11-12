@@ -3,6 +3,7 @@
 from flask import abort, g, render_template, url_for
 
 from . import bp, odoo_forms
+from ..core import store
 from .base import _odoo_or_error, reference_url
 from .ui import group_by, group_ids, group_list, group_rows, pager
 
@@ -25,8 +26,11 @@ def _odoo_record(page, record_id, crumbs, purpose=None):
             error = str(exc)
     if not record and not error and not feeding:
         abort(404)
+    # When the service first and last wrote this record (its own log), not Odoo's dates.
+    created, modified = store.record_times(g.db, page["model"], [record_id]).get(record_id, (None, None))
     return render_template("records/odoo_record.html", title=(record or {}).get("title") or f"#{record_id}", record=record,
-                           crumbs=crumbs, emails=feeding, error=error, odoo_link=_odoo_link(page["model"], record_id))
+                           crumbs=crumbs, emails=feeding, error=error, odoo_link=_odoo_link(page["model"], record_id),
+                           created=created, modified=modified)
 
 
 # The kinds of Odoo field a list can be grouped on, as Odoo allows (amounts and counts are summed there instead).
@@ -43,8 +47,10 @@ def _odoo_list(title, intro, model, ids, columns, endpoint, id_arg, empty, purpo
         if not some:
             return []
         heads, found = odoo_forms.list_rows(odoo, model, set(some), columns)
+        times = store.record_times(g.db, model, [row["id"] for row in found])
         for row in found:
             row["emails"] = counts.get(row["id"], 0)
+            row["created"], row["modified"] = times.get(row["id"], (None, None))
         return found
 
     try:

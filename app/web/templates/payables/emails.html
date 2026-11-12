@@ -13,9 +13,9 @@
 <div class="card table-card fill-card">
 {% if groups %}
   <table class="data" id="records">
-    <thead><tr><th>Email</th><th>Mailbox</th><th>Received</th><th>Files</th></tr></thead>
+    <thead><tr><th>Email</th><th>Mailbox</th><th>Received</th><th>Files</th><th>Created</th><th>Last modified</th></tr></thead>
     {% for grp in groups %}
-    {% call(m) group_body(grp, 4, groupby) %}
+    {% call(m) group_body(grp, 6, groupby) %}
     {% set href = url_for('web.payables_email', message_id=m.id) %}
     <tr data-href="{{ href }}">
       <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ (m.subject or "No subject")|highlight(query.split()) }}</a>
@@ -23,6 +23,8 @@
       <td data-label="Mailbox">{{ m.mailbox_name }}</td>
       <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
       <td data-label="Files">{% if m.files %}<span class="num">{{ m.files }}</span>{% else %}<span class="faint">–</span>{% endif %}</td>
+      <td data-label="Created"><span class="num">{{ m.created_at|when(short=True) }}</span></td>
+      <td data-label="Last modified"><span class="num">{{ m.updated_at|when(short=True) }}</span></td>
     </tr>
     {% endcall %}
     {% endfor %}

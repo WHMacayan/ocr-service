@@ -15,7 +15,9 @@
   <div class="detail">
     <a class="back-link" href="{{ url_for('web.records', key=key) }}">{{ icon("back") }} {{ form.title }}</a>
     <header class="detail-head">
-      <div class="detail-meta">{{ form.title }} · {{ "New" if is_new else "Edit" }}</div>
+      <div class="detail-meta">{{ form.title }} · {{ "New" if is_new else "Edit" }}
+        {%- if not is_new and record.created_at %} · Created {{ record.created_at|when }}{% endif %}
+        {%- if not is_new and record.updated_at %} · Last modified {{ record.updated_at|when }}{% endif %}</div>
       <div class="detail-title"><h2 id="detail-title" tabindex="-1">{{ record.name or record.partner_name or ("New " ~ form.singular if is_new else form.singular|capitalize) }}</h2></div>
     </header>
 {% else %}
@@ -72,7 +74,7 @@
   </div>
   {% if connections %}
   <table class="data">
-    <thead><tr><th>Connection</th><th>Status</th><th>Database</th><th>Gets mail from</th><th></th></tr></thead>
+    <thead><tr><th>Connection</th><th>Status</th><th>Database</th><th>Gets mail from</th><th>Created</th><th>Last modified</th><th></th></tr></thead>
     <tbody>
     {% for c in connections %}
     {% set complete = c.url and c.database and c.login and c.api_key %}
@@ -87,6 +89,8 @@
         {% else %}<span class="badge muted-badge">Off</span>{% endif %}</td>
       <td data-label="Database">{{ c.database or "" }}</td>
       <td data-label="Gets mail from">{% if c.active %}{{ (c.start_from or "")[:10] or "All mail" }}{% endif %}</td>
+      <td data-label="Created"><span class="num">{{ c.created_at|when(short=True) }}</span></td>
+      <td data-label="Last modified"><span class="num">{{ c.updated_at|when(short=True) }}</span></td>
       <td class="row-actions">
         {% if c.active %}
         <form method="post" action="{{ url_for('web.connection_off', connection_id=c.id) }}"

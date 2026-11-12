@@ -37,7 +37,7 @@ def payables():
 # Group By: the column offered, and the SQL its emails are grouped and counted on.
 PAYABLES_GROUPS = {"mailbox": "Mailbox", "sender": "Sender domain", "day": "Day received"}
 GROUP_SQL = {"mailbox": "b.name", "sender": "m.sender_domain", "day": "date(m.received)"}
-EMAIL_SQL = ("SELECT m.id, m.subject, m.sender, m.received, m.state, b.name AS mailbox_name, "
+EMAIL_SQL = ("SELECT m.id, m.subject, m.sender, m.received, m.state, m.created_at, m.updated_at, b.name AS mailbox_name, "
              "(SELECT COUNT(*) FROM payables_message_file x WHERE x.message_id = m.id) AS files "
              "FROM payables_message m JOIN mailbox b ON b.id = m.mailbox_id WHERE ")
 

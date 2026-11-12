@@ -25,7 +25,8 @@
       <a href="{{ url_for('web.booking_list') }}" {% if here.startswith('/bookings') %}aria-current="page"{% endif %}>Bookings</a>
       <a href="{{ url_for('web.scraped_bills') }}" {% if here.startswith('/scraped-bills') %}aria-current="page"{% endif %}>Scraped bills</a>
       <a href="{{ url_for('web.customs_batches') }}" {% if here.startswith('/customs') %}aria-current="page"{% endif %}>Customs</a>
-      <a href="{{ url_for('web.payables_emails') }}" {% if here.startswith('/payables') %}aria-current="page"{% endif %}>Freight Payables</a>
+      {# Freight Payables is parked: hidden from the menu, its pages and worker kept. Restore this line to show it again.
+      <a href="{{ url_for('web.payables_emails') }}" {% if here.startswith('/payables') %}aria-current="page"{% endif %}>Freight Payables</a> #}
       <a href="{{ url_for('web.activity') }}" {% if here.startswith('/activity') %}aria-current="page"{% endif %}>Activity</a>
       <details class="o-dropdown">
         <summary {% if setup_here %}aria-current="page"{% endif %}>Configuration</summary>

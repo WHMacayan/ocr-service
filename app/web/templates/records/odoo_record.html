@@ -21,6 +21,7 @@
 {% endif %}
 
 <div class="o-sheet o-record">
+  {% if created %}<p class="faint" style="margin:0 0 12px">In the OCR service: created {{ created|when }}{% if modified and modified != created %} · last modified {{ modified|when }}{% endif %}</p>{% endif %}
   {% if record %}
   <div class="o-groups">
     {% for section, fields in record.sections if fields %}{{ field_group(section, fields) }}{% endfor %}

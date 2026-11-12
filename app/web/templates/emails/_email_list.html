@@ -46,6 +46,7 @@
             {%- elif m.state in ("done", "skipped") %}<span class="nothing" title="Processed before the service kept this record.">Not recorded</span>
             {%- elif m.files %}<span class="faint">{{ m.files }} file{{ "s" if m.files != 1 }}</span>{% endif %}
             {%- if m.thread and m.thread > 1 %}<span class="thread-count">{{ m.thread }} in thread</span>{% endif %}
+            {%- if m.created_at %}<span class="faint stamp">Created {{ m.created_at|when(short=True) }}{% if m.updated_at and m.updated_at != m.created_at %} · Modified {{ m.updated_at|when(short=True) }}{% endif %}</span>{% endif %}
           </span>
         </span>
       </a>

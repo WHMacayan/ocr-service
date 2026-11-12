@@ -11,9 +11,9 @@
 <div class="card table-card fill-card">
 {% if groups %}
   <table class="data" id="records">
-    <thead><tr><th>Booking</th><th>Factory</th><th>Route</th><th>ETD / ETA</th><th>Odoo state</th><th>Check</th></tr></thead>
+    <thead><tr><th>Booking</th><th>Factory</th><th>Route</th><th>ETD / ETA</th><th>Odoo state</th><th>Check</th><th>Created</th><th>Last modified</th></tr></thead>
     {% for grp in groups %}
-    {% call(b) group_body(grp, 6, groupby) %}
+    {% call(b) group_body(grp, 8, groupby) %}
     {% set href = url_for('web.booking', booking_id=b.id) %}
     <tr data-href="{{ href }}">
       <td class="cell-main"><a class="primary" href="{{ href }}">{{ b.label }}</a>
@@ -28,6 +28,8 @@
         {% elif b.differs %}<span class="badge review" title="{{ b.differs|join(', ') }}">{{ b.differs|length }} differ{{ "s" if b.differs|length == 1 }}</span>
         {% elif b.odoo %}<span class="badge ok">Matches</span>{% endif %}
       </td>
+      <td data-label="Created"><span class="num">{{ b.created|when(short=True) }}</span></td>
+      <td data-label="Last modified"><span class="num">{{ b.modified|when(short=True) }}</span></td>
     </tr>
     {% endcall %}
     {% endfor %}

@@ -36,6 +36,8 @@
         <div class="kv-row"><dt>Files</dt><dd>{{ files|length }}</dd></div>
         <div class="kv-row"><dt>Records in Odoo</dt><dd>{{ (written.records|length) if written else 0 }}</dd></div>
         <div class="kv-row"><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
+        <div class="kv-row"><dt>Created</dt><dd>{{ message.created_at|when or "–" }}</dd></div>
+        <div class="kv-row"><dt>Last modified</dt><dd>{{ message.updated_at|when or "–" }}</dd></div>
       </dl>
     </section>
 
@@ -134,7 +136,8 @@
         <li>
           <span class="file-icon">{{ icon("file") }}</span>
           <span class="row-main"><b class="clip-1">{{ f.filename }}</b>
-            <span class="row-sub">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }}{% if f.odoo_id %} · Odoo ID {{ f.odoo_id }}{% endif %}{% if f.note %} · {{ f.note }}{% endif %}</span></span>
+            <span class="row-sub">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }}{% if f.odoo_id %} · Odoo ID {{ f.odoo_id }}{% endif %}{% if f.note %} · {{ f.note }}{% endif %}</span>
+            {% if f.created_at %}<span class="row-sub">Created {{ f.created_at|when }}{% if f.updated_at and f.updated_at != f.created_at %} · Last modified {{ f.updated_at|when }}{% endif %}</span>{% endif %}</span>
           <span class="badge {{ f.state }}">{{ {"new": "Queued", "waiting": "Waiting for booking"}.get(f.state, f.state|capitalize) }}</span>
         </li>
         {% endfor %}

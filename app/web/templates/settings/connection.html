@@ -23,6 +23,9 @@
   {% endif %}
 {% endcall %}
 
+{% if not is_new and record.created_at %}
+<p class="faint" style="margin:0 0 16px">Created {{ record.created_at|when }}{% if record.updated_at %} · Last modified {{ record.updated_at|when }}{% endif %}</p>
+{% endif %}
 {% if record.last_check_note and not record.active %}
 <div class="callout bad" style="margin-bottom:20px">{{ icon("alert") }}<span><b>Last check{% if record.last_check_at %} ({{ record.last_check_at|when }}){% endif %}:</b>
   <span style="white-space:pre-line">{{ record.last_check_note }}</span></span></div>

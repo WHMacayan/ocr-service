@@ -44,6 +44,9 @@
               {%- endif %}
             {%- endfor %}
           </span>
+          {%- if "created_at" in row.keys() and row.created_at %}
+          <span class="mail-meta"><span class="faint stamp">Created {{ row.created_at|when(short=True) }}{% if row.updated_at and row.updated_at != row.created_at %} · Modified {{ row.updated_at|when(short=True) }}{% endif %}</span></span>
+          {%- endif %}
         </span>
       </a>
     </li>

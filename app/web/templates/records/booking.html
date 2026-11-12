@@ -22,6 +22,7 @@
 {% endif %}
 
 <div class="o-sheet o-record">
+  {% if times[0] %}<p class="faint" style="margin:0 0 12px">In the OCR service: created {{ times[0]|when }}{% if times[1] and times[1] != times[0] %} · last modified {{ times[1]|when }}{% endif %}</p>{% endif %}
   {% if odoo_row and (odoo_row.missing_fields or odoo_row.open_conflict_count or odoo_row.has_uncertain_match) %}
   <div class="o-groups">
     {{ field_group("Needs attention",

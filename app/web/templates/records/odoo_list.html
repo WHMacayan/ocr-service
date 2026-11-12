@@ -11,9 +11,9 @@
 <div class="card table-card fill-card">
 {% if groups %}
   <table class="data" id="records">
-    <thead><tr>{% for _c, label in heads %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+    <thead><tr>{% for _c, label in heads %}<th>{{ label }}</th>{% endfor %}<th>Created</th><th>Last modified</th></tr></thead>
     {% for grp in groups %}
-    {% call(r) group_body(grp, heads|length, groupby) %}
+    {% call(r) group_body(grp, heads|length + 2, groupby) %}
     {% set href = url_for(endpoint, **{id_arg: r.id}) %}
     <tr data-href="{{ href }}">
       {% for c, label in heads %}
@@ -26,6 +26,8 @@
       <td data-label="{{ label }}"><span class="{{ 'num' if r.raw[c] is number else '' }}">{{ r[c] }}</span></td>
       {% endif %}
       {% endfor %}
+      <td data-label="Created"><span class="num">{{ r.created|when(short=True) }}</span></td>
+      <td data-label="Last modified"><span class="num">{{ r.modified|when(short=True) }}</span></td>
     </tr>
     {% endcall %}
     {% endfor %}

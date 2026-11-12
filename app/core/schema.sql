@@ -1,4 +1,6 @@
 -- The service's own state. Run at every start: CREATE ... IF NOT EXISTS only.
+-- created_at / updated_at on mailbox, odoo_connection, message, file, vendor_mapping, subject_format and
+-- payables_message are added and kept by triggers in store._record_times (see store.TIMED_TABLES).
 
 CREATE TABLE IF NOT EXISTS setting (
     key TEXT PRIMARY KEY,

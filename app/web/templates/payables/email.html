@@ -7,7 +7,8 @@
 
 <div class="o-sheet o-record">
   <div class="o-groups">
-    {{ field_group("Email", [("From", message.sender), ("Received", message.received|when), ("Mailbox", message.mailbox_name)]) }}
+    {{ field_group("Email", [("From", message.sender), ("Received", message.received|when), ("Mailbox", message.mailbox_name),
+                                  ("Created", message.created_at|when), ("Last modified", message.updated_at|when)]) }}
     {% if message.skipped_attachments %}{{ field_group("Not kept", [("Attachments", message.skipped_attachments)]) }}{% endif %}
   </div>
 
