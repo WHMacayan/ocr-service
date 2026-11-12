@@ -18,7 +18,8 @@ from contextlib import nullcontext
 from ..documents import extract
 from ..core import store
 from .bills import BillMatcher
-from .freight import Booker, resolve_mapping
+from .uploads import read_uploads
+from .freight import Booker
 from .customs import CustomsUploader
 from ..documents.text import newest_message_text, normalize_identifier
 
@@ -70,6 +71,7 @@ def process(db, odoo, connection_id, purposes=None):
         for company_id in {row["company_id"] for row in db.execute(
                 "SELECT company_id FROM mailbox WHERE purpose = 'bill_matching'")}:
             run.matcher(company_id).rematch_waiting(limit)
+        read_uploads(run, limit)
 
 
 def _purposes_clause(purposes):
@@ -236,37 +238,7 @@ class _Run:
             return self.booker(message["company_id"]).take(doc)
         if doc["doc_class"] != "supplier_invoice":
             return "skipped", "Not an invoice.", None
-        result = self.matcher(message["company_id"]).take(doc)
-        self.freight_cost_from(message, doc)
-        return result
-
-    def freight_cost_from(self, message, doc):
-        """A forwarder's or carrier's invoice reaching Bill Matching also bills a booking's freight: read once
-        as a freight document (saved, so never asked twice), a freight invoice goes to its booking. A mapped
-        factory's invoice, or one naming no shipment, is only a bill."""
-        values = doc["values"]
-        if not (values.get("master_bl") or values.get("house_bl") or values.get("containers")):
-            return
-        domain = (doc["sender"] or "").rpartition("@")[2]
-        if resolve_mapping(self.mappings, "factory", sender_domain=domain, name=values.get("vendor_name")):
-            return
-        try:
-            reading = self.db.execute("SELECT doc_class, extracted FROM file_freight_reading WHERE file_id = ?",
-                                      (doc["file_id"],)).fetchone()
-            if reading is None:
-                self.db.commit()  # never hold the database while the AI reads
-                path = self.db.execute("SELECT path FROM file WHERE id = ?", (doc["file_id"],)).fetchone()["path"]
-                with open(path, "rb") as handle:
-                    doc_class, freight = extract.read_file(handle.read(), "freight_booking", self.settings)
-                self.db.execute("INSERT INTO file_freight_reading (file_id, doc_class, extracted) VALUES (?, ?, ?)",
-                                (doc["file_id"], doc_class, json.dumps(freight)))
-                self.db.commit()  # the AI is paid for
-                reading = {"doc_class": doc_class, "extracted": json.dumps(freight)}
-            if reading["doc_class"] == "freight_invoice":
-                self.booker(message["company_id"]).take(dict(doc, doc_class="freight_invoice",
-                                                             values=json.loads(reading["extracted"])))
-        except Exception:  # the bill is in Odoo whatever happens here; the re-link pass tries again
-            _logger.warning("File %s: its freight cost could not be given to a booking", doc["file_id"], exc_info=True)
+        return self.matcher(message["company_id"]).take(doc)
 
     def _file(self, file, state, note, odoo_id=None):
         self.db.execute(

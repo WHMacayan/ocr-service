@@ -3,26 +3,19 @@
 - conflicts: close the open booking conflicts the rules now settle (the same value written another
   way, a later document moving the schedule, an older one, the feeder beside the ocean vessel, the
   carrier beside the forwarder, an impossible value); the rest stay for a person;
-- bills: read the invoices behind the Ready-to-Create-PO bills again, so their lines get their part
-  number and product;
-- freight: give the freight cost of the forwarders' invoices that reached Bill Matching to their bookings.
-  (Freight invoices still waiting for a booking are tried again by the worker itself on its next runs.)
 
-Nothing is written unless ``apply``; each pass returns what it found, counted by reason.
+Nothing is written unless ``apply``; the pass returns what it found, counted by reason.
 """
 
-import json
 import logging
 import re
 from collections import Counter, defaultdict
 
 from ..core import store
-from ..documents import extract
 from ..documents.text import file_text, normalize_identifier
-from .bills import SCRAPED_BILL, BillMatcher
 from .freight import (BOOKING, CARRIER, CONFLICT, UPDATED_BY_CONFIRMATION, _READ, plausible_date, plausible_vessel,
                       resolve_mapping, same_value)
-from .pipeline import SETTING_KEYS, BookingHistory, _Run, _source
+from .pipeline import BookingHistory
 
 _logger = logging.getLogger(__name__)
 
@@ -126,78 +119,4 @@ def close_false_conflicts(db, odoo, connection_id, apply=False):
             odoo.write(CONFLICT, closed, {"state": "resolved"})
             odoo.call(BOOKING, "message_post", [booking_id],
                       body="Conflicts closed by the OCR service's updated rules:<br/>" + "<br/>".join(notes))
-    return outcome
-
-
-# ── bills ────────────────────────────────────────────────────────────
-
-def _settings(db):
-    return {key: store.get_setting(db, key) for key in SETTING_KEYS}
-
-
-def reread_ready_bills(db, odoo, connection_id, apply=False, limit=None):
-    """The invoices behind the Ready-to-Create-PO bills, read again: their lines get part numbers and products."""
-    settings = _settings(db)
-    outcome = Counter()
-    bills = odoo.search_read(SCRAPED_BILL, [("state", "=", "ready_for_po")], ["id", "company_id"], limit=limit)
-    matchers = {}
-    for bill in bills:
-        company_id = bill["company_id"][0]
-        matcher = matchers.setdefault(company_id, BillMatcher(odoo, company_id, []))
-        files = db.execute(
-            "SELECT f.id, f.path, f.message_id FROM file f JOIN file_target t ON t.file_id = f.id AND t.connection_id = ? "
-            "JOIN message m ON m.id = f.message_id JOIN mailbox b ON b.id = m.mailbox_id AND b.purpose = 'bill_matching' "
-            "WHERE t.odoo_id = ? AND f.doc_class = 'supplier_invoice' ORDER BY f.id", (connection_id, bill["id"])).fetchall()
-        if not files:
-            outcome["no invoice file kept"] += 1
-            continue
-        if not apply:
-            outcome["would be read again"] += 1
-            continue
-        for file in files:
-            with open(file["path"], "rb") as handle:
-                doc_class, values = extract.read_file(handle.read(), "bill_matching", settings)
-            if doc_class != "supplier_invoice" or not values.get("lines"):
-                continue
-            db.execute("UPDATE file SET extracted = ? WHERE id = ?", (json.dumps(values), file["id"]))
-            db.commit()  # the AI is paid for
-            with _source(odoo, file["message_id"], file["id"]):
-                matcher.add_lines(bill["id"], values["lines"], replace=True)
-            lines = odoo.search_read("b2b.ocr.scraped.bill.line", [("bill_scrape_id", "=", bill["id"])], ["product_id"])
-            linked = sum(1 for line in lines if line.get("product_id"))
-            outcome["bills read again"] += 1
-            outcome["lines"] += len(lines)
-            outcome["lines linked to a product"] += linked
-            break
-        else:
-            outcome["no lines found when read again"] += 1
-    return outcome
-
-
-# ── freight ──────────────────────────────────────────────────────────
-
-def freight_from_bills(db, odoo, connection_id, apply=False):
-    """The forwarders' invoices already in Bill Matching: their freight cost goes to their bookings."""
-    run = _Run(db, odoo, connection_id, _settings(db))
-    outcome = Counter()
-    for row in db.execute(
-            "SELECT f.id, f.filename, f.extracted, m.id AS message_id, m.sender, m.subject, m.received, b.company_id "
-            "FROM file f JOIN message m ON m.id = f.message_id JOIN mailbox b ON b.id = m.mailbox_id "
-            "AND b.purpose = 'bill_matching' JOIN file_target t ON t.file_id = f.id AND t.connection_id = ? "
-            "WHERE f.doc_class = 'supplier_invoice' AND t.state = 'done' "
-            "AND f.id NOT IN (SELECT file_id FROM file_freight_reading)", (connection_id,)).fetchall():
-        values = json.loads(row["extracted"] or "{}")
-        domain = (row["sender"] or "").rpartition("@")[2]
-        if not (values.get("master_bl") or values.get("house_bl") or values.get("containers")) or resolve_mapping(
-                run.mappings, "factory", sender_domain=domain, name=values.get("vendor_name")):
-            continue
-        outcome["forwarder or carrier invoices"] += 1
-        if not apply:
-            continue
-        doc = {"sender": row["sender"] or "", "subject": row["subject"] or "", "received": row["received"],
-               "doc_class": "supplier_invoice", "values": values, "source": row["filename"], "file_id": row["id"]}
-        with _source(odoo, row["message_id"], row["id"]):
-            run.freight_cost_from({"company_id": row["company_id"]}, doc)
-        reading = db.execute("SELECT doc_class FROM file_freight_reading WHERE file_id = ?", (row["id"],)).fetchone()
-        outcome[f"read as {reading['doc_class'] if reading else 'nothing'}"] += 1
     return outcome

@@ -198,6 +198,10 @@ class FakeOdoo:
             if model == "purchase.order":
                 names |= {"master_bl", "house_bl", "container_number"}
             return {n: {"string": n.replace("_", " ").title()} for n in names}
+        if method == "unlink":
+            for i in args[0]:
+                self.rows(model).pop(i, None)
+            return True
         if method == "message_post":
             self.posts.append((model, args, kwargs))
             return True

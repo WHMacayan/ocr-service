@@ -37,6 +37,8 @@ function initToast(t) {
 }
 
 function init(root) {
+  // Column sort chosen earlier on this page: kept on rows refreshed, loaded or swapped in.
+  (root.closest?.("table.data") ? [root.closest("table.data")] : $$(root, "table.data")).forEach(restoreSort);
   $$(root, "[data-live][id]").forEach(el => served.set(el, el.outerHTML));
   $$(root, "time[datetime]").forEach(t => {
     const shown = localTime(t.getAttribute("datetime"), t.hasAttribute("data-short"));
@@ -310,6 +312,60 @@ function apply(doc, url, { push, method }) {
 
 const inApp = () => document.getElementById("main");
 const ownPage = url => url.origin === location.origin && !url.pathname.startsWith("/static/") && !url.pathname.startsWith("/oauth");
+
+// ── column sort: a table's header sorts its rows by that column; again, the other way ─────────
+// The rows on the page are sorted (a long list's other pages are not fetched). Within a grouped list
+// each group is sorted on its own, its header first. A cell's data-sort, else its time, else its text
+// is compared: as numbers when every value of the column reads as one, else as text. Empty cells last.
+// The choice is remembered per page and table for this browser tab.
+
+const sortKey = table => `sort:${location.pathname}:${[...table.tHead.rows[0].cells].map(c => c.textContent.trim()).join("|")}`;
+const cellValue = cell => {
+  if (!cell) return "";
+  if (cell.dataset.sort !== undefined) return cell.dataset.sort;
+  const time = cell.querySelector("time[datetime]");
+  return time ? time.getAttribute("datetime") : cell.textContent.replace(/\s+/g, " ").trim();
+};
+const asNumber = v => {
+  const clean = v.replace(/[,\s]/g, "").replace(/^[^\d.-]+|[^\d.]+$/g, "");
+  return clean !== "" && /^-?\d*\.?\d+$/.test(clean) ? Number(clean) : null;
+};
+
+function sortTable(table, col, dir) {
+  const bodies = [...table.tBodies];
+  const rowsOf = body => [...body.rows].filter(r => !r.matches(".o-group-row") && r.cells.length > col);
+  const values = bodies.flatMap(b => rowsOf(b).map(r => cellValue(r.cells[col])));
+  const numeric = values.some(v => v !== "") && values.every(v => v === "" || asNumber(v) !== null);
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const compare = (a, b) => {
+    if (a === "" || b === "") return (a === "") - (b === "");  // empty last, whichever way
+    return dir * (numeric ? asNumber(a) - asNumber(b) : collator.compare(a, b));
+  };
+  bodies.forEach(body => {
+    const rows = rowsOf(body).map(r => [r, cellValue(r.cells[col])]);
+    rows.sort((x, y) => compare(x[1], y[1])).forEach(([r]) => body.appendChild(r));
+  });
+  [...table.tHead.rows[0].cells].forEach((th, i) =>
+    i === col ? th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending") : th.removeAttribute("aria-sort"));
+}
+
+function restoreSort(table) {
+  if (!table.tHead?.rows.length) return;
+  [...table.tHead.rows[0].cells].forEach(th => th.classList.add("sortable"));
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem(sortKey(table)) || "null"); } catch { saved = null; }
+  if (saved) sortTable(table, saved.col, saved.dir);
+}
+
+document.addEventListener("click", e => {
+  const th = e.target.closest("table.data > thead th");
+  if (!th || e.target.closest("a, button, input, select")) return;
+  const table = th.closest("table");
+  const col = th.cellIndex;
+  const dir = th.getAttribute("aria-sort") === "ascending" ? -1 : 1;
+  sortTable(table, col, dir);
+  try { sessionStorage.setItem(sortKey(table), JSON.stringify({ col, dir })); } catch { /* private mode */ }
+});
 
 document.addEventListener("click", e => {
   if (!inApp() || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

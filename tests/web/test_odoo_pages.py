@@ -40,11 +40,9 @@ def fed(db, purpose, odoo_id, subject):
                    (message_id, subject, odoo_id))
 
 
-def test_scraped_bill_page_shows_the_form_and_its_lines(client, db, odoo):  # noqa: F811
+def test_scraped_bill_page_shows_the_form(client, db, odoo):  # noqa: F811
     bill = odoo.add("b2b.ocr.scraped.bill", name="TIMAC-260805", vendor_name="ETERNAL MACHINE TOOL", state="ready_for_po",
                     amount_total=10169.41, match_notes="No draft bill or purchase order of this vendor fits.")
-    odoo.add("b2b.ocr.scraped.bill.line", bill_scrape_id=bill, description="CNC LATHE", quantity=1.0,
-             price_unit=10169.41, amount=10169.41)
     odoo.add("b2b.ocr.scraped.bill", name="NOT-OURS", state="waiting")
     fed(db, "bill_matching", bill, "Invoice TIMAC-260805")
     signed_in(client)
@@ -53,7 +51,7 @@ def test_scraped_bill_page_shows_the_form_and_its_lines(client, db, odoo):  # no
     assert "TIMAC-260805" in listing and "NOT-OURS" not in listing and "from 1 email" in listing
 
     page = client.get(f"/scraped-bills/{bill}").get_data(as_text=True)
-    for shown in ("ETERNAL MACHINE TOOL", "Vendor", "Invoice", "Match", "Lines", "CNC LATHE", "10,169.41",
+    for shown in ("ETERNAL MACHINE TOOL", "Vendor", "Invoice", "Match", "10,169.41",
                   "No draft bill or purchase order", "Invoice TIMAC-260805",
                   f"/web#model=b2b.ocr.scraped.bill&amp;id={bill}"):
         assert shown in page

@@ -1,9 +1,8 @@
 """Scraped Bills: one b2b.ocr.scraped.bill per supplier invoice (vendor +
-invoice number), matched to the vendor's draft bill, else purchase order,
-else parked as Ready to Create PO.
-
-Port of b2b_freight_ocr's supplier invoice rules. The service only suggests:
-confirming the bill or order found is a button in Odoo.
+invoice number), matched automatically: the vendor's bill (posted, then draft); when none fits,
+the purchase order, then that order's bill; when no order fits either, the bill is parked as
+Ready to Create PO. The service never creates a purchase order (parked idea, see README) and
+only suggests: confirming the bill or order found is a button in Odoo.
 """
 
 import re
@@ -12,13 +11,10 @@ from .freight import m2o_id, resolve_mapping
 from ..documents.text import normalize_identifier, parse_date, split_list
 
 SCRAPED_BILL = "b2b.ocr.scraped.bill"
-BILL_LINE = "b2b.ocr.scraped.bill.line"
-_SCALARS = (("invoice_date", "Invoice date"), ("currency_name", "Currency"), ("amount_total", "Total"),
-            ("master_bl", "Master B/L"), ("house_bl", "House B/L"))
+_SCALARS = ("invoice_date", "currency_name", "amount_total", "master_bl", "house_bl")
 _LISTS = (("po_numbers", "po_numbers"), ("container_numbers", "containers"))
 _READ = ["name", "external_key", "partner_id", "vendor_name", "vendor_vat", "invoice_date", "currency_name",
-         "amount_total", "po_numbers", "master_bl", "house_bl", "container_numbers", "source", "conflict_notes",
-         "state"]
+         "amount_total", "po_numbers", "master_bl", "house_bl", "container_numbers", "source", "state"]
 # A person moved these on; the service leaves them alone.
 SETTLED_STATES = ("needs_review", "bill_confirmed", "po_confirmed")
 
@@ -27,32 +23,22 @@ def _keys(text):
     return {normalize_identifier(part) for part in re.split(r"[,;/&\n]", text or "")} - {""}
 
 
-# A tyre size (235/40ZR19, LT225/75R16, 295/75R22.5) or a wheel size (18X8.5), as printed.
-_SIZE = re.compile(r"(?<![\w/])(?:LT|P)?(\d{2,3}(?:/\d{2,3})?)\s*Z?R\s*(\d{2}(?:\.\d)?)(?!\d)|(?<![\w.])(\d{2}(?:\.\d)?)\s*X\s*(\d{1,2}(?:\.\d{1,2})?)(?![\d.])",
-                   re.IGNORECASE)
-
-
-def sizes(text):
-    """The sizes a text prints, written one way: 235/40R19 for 235/40ZR19, 18X8.5 for 18 x 8.5."""
-    return {f"{m[0]}R{m[1]}" if m[0] else f"{m[2]}X{m[3]}" for m in _SIZE.findall(text or "")}
-
-
 class BillMatcher:
     def __init__(self, odoo, company_id, mappings):
         self.odoo = odoo
         self.company_id = company_id
         self.mappings = mappings
         self._po_fields = None
-        self._line_fields = None
-        self._products = {}
 
     # ------------------------------------------------------------------
     # From a document
     # ------------------------------------------------------------------
 
-    def take(self, doc):
+    def take(self, doc, placeholder=None):
         """``(state, note, scraped_bill_id)``: ``done`` once the invoice is in
-        Odoo, ``waiting`` when it prints no invoice number."""
+        Odoo, ``waiting`` when it prints no invoice number. ``placeholder``: the id of a bill an upload
+        created in Odoo before the file was read: it takes the invoice's identity, or when that invoice
+        is already there, merges into it (the file moves over) and goes."""
         values = doc["values"]
         number = normalize_identifier(values.get("invoice_number"))
         if not number:
@@ -60,7 +46,8 @@ class BillMatcher:
         sender_domain = (doc["sender"] or "").rpartition("@")[2]
         # The printed vendor, not the resolved partner: a mapping added later
         # must not turn the same invoice into a new one.
-        vendor_key = " ".join((values.get("vendor_name") or "").upper().split()) or f"@{sender_domain}"
+        vendor_key = " ".join((values.get("vendor_name") or "").upper().split()) or (
+            f"@{sender_domain}" if sender_domain else "UNKNOWN VENDOR")
         external_key = f"{vendor_key}|{number}"
         found = self.odoo.search_read(SCRAPED_BILL, [("company_id", "=", self.company_id),
                                                      ("external_key", "=", external_key)], _READ)
@@ -73,14 +60,22 @@ class BillMatcher:
                 self.odoo.write(SCRAPED_BILL, [bill["id"]], {"partner_id": partner})
         else:
             partner = self.resolve_vendor(values.get("vendor_name"), values.get("vendor_vat"), sender_domain)
-            bill_id = self.odoo.create(SCRAPED_BILL, {
-                "name": values["invoice_number"], "external_key": external_key, "company_id": self.company_id,
-                "partner_id": partner, "sender_email": doc["sender"]})
+            identity = {"name": values["invoice_number"], "external_key": external_key,
+                        "partner_id": partner, "sender_email": doc["sender"]}
+            if placeholder:
+                self.odoo.write(SCRAPED_BILL, [placeholder], identity)
+                bill_id = placeholder
+            else:
+                bill_id = self.odoo.create(SCRAPED_BILL, dict(identity, company_id=self.company_id))
             bill = self.odoo.call(SCRAPED_BILL, "read", [bill_id], _READ)[0]
         self.merge(bill, values, doc["source"])
-        self.add_lines(bill["id"], values.get("lines"))
         if bill["state"] not in SETTLED_STATES:
             self.match(self.odoo.call(SCRAPED_BILL, "read", [bill["id"]], _READ)[0])
+        if placeholder and bill["id"] != placeholder:
+            for attachment in self.odoo.call("ir.attachment", "search", [
+                    ("res_model", "=", SCRAPED_BILL), ("res_id", "=", placeholder)]):
+                self.odoo.write("ir.attachment", [attachment], {"res_id": bill["id"]})
+            self.odoo.call(SCRAPED_BILL, "unlink", [placeholder])
         return "done", None, bill["id"]
 
     def resolve_vendor(self, name, vat, sender_domain):
@@ -107,24 +102,18 @@ class BillMatcher:
         return False
 
     def merge(self, bill, values, source):
-        """Fill what is empty; a different value goes to Conflict Notes."""
-        updates, conflicts = {}, []
+        """Fill what is empty; a value already there is kept (the first reading stands)."""
+        updates = {}
         for name in ("vendor_name", "vendor_vat"):
             if values.get(name) and not bill[name]:
                 updates[name] = values[name]
         incoming = dict(values, currency_name=values.get("currency"), invoice_date=parse_date(values.get("invoice_date")))
-        for name, label in _SCALARS:
+        for name in _SCALARS:
             new = incoming.get(name)
             if new in (None, "", False):
                 continue
-            old = bill[name]
-            if not old:
+            if not bill[name]:
                 updates[name] = new
-            elif (abs(old - float(new)) > self.rounding(bill["currency_name"]) if name == "amount_total"
-                  else normalize_identifier(old) != normalize_identifier(new)):
-                line = f"{label}: kept {old}, {source} says {new}"
-                if line not in (bill["conflict_notes"] or ""):
-                    conflicts.append(line)
         for name, key in _LISTS:
             known = split_list(bill[name])
             added = [v for v in values.get(key) or [] if v not in known]
@@ -133,53 +122,8 @@ class BillMatcher:
         sources = split_list(bill["source"])
         if source not in sources:
             updates["source"] = ", ".join(sources + [source])
-        if conflicts:
-            updates["conflict_notes"] = "\n".join(filter(None, [bill["conflict_notes"]] + conflicts))
         if updates:
             self.odoo.write(SCRAPED_BILL, [bill["id"]], updates)
-
-    def add_lines(self, bill_id, lines, replace=False):
-        """The invoice's lines, from the first document that prints them: a copy adds none. replace:
-        the lines read again take the place of the ones there (an invoice re-read)."""
-        lines = [line for line in lines or [] if line.get("description") or line.get("amount")]
-        if not lines:
-            return
-        old = self.odoo.call(BILL_LINE, "search", [("bill_scrape_id", "=", bill_id)])
-        if old and not replace:
-            return
-        if old:
-            self.odoo.call(BILL_LINE, "unlink", old)
-        has_products = "product_id" in self.line_fields()  # the Odoo module before Part Number and Product
-        for line in lines:
-            values = {"bill_scrape_id": bill_id, "description": line.get("description") or "",
-                      "quantity": line.get("quantity") or 0, "price_unit": line.get("unit_price") or 0,
-                      "amount": line.get("amount") or 0}
-            if has_products:
-                values.update(product_code=line.get("part_number") or False,
-                              product_id=self.product_of(line.get("part_number"), line.get("description")))
-            self.odoo.create(BILL_LINE, values)
-
-    def line_fields(self):
-        if self._line_fields is None:
-            self._line_fields = self.odoo.call(BILL_LINE, "fields_get", attributes=["type"])
-        return self._line_fields
-
-    def product_of(self, part_number, description):
-        """The one product an invoice line names: the internal reference is the part number, or ends with
-        it (ARROYOAGS089 for AGS089); when the line prints a size, the product's name must print it too.
-        False when none fits, or several do."""
-        code = normalize_identifier(part_number)
-        if len(code) < 4:
-            return False
-        key = (code, frozenset(sizes(description)))
-        if key not in self._products:
-            found = [p for p in self.odoo.search_read("product.product", [("default_code", "=ilike", f"%{code}")],
-                                                      ["default_code", "name"], limit=50)
-                     if normalize_identifier(p["default_code"]).endswith(code)]
-            if key[1]:
-                found = [p for p in found if sizes(p["name"]) & key[1]]
-            self._products[key] = found[0]["id"] if len(found) == 1 else False
-        return self._products[key]
 
     # ------------------------------------------------------------------
     # Matching
@@ -194,8 +138,6 @@ class BillMatcher:
 
     def match(self, bill):
         cleared = {"bill_id": False, "purchase_id": False, "match_notes": False, "waiting_reason": False}
-        if bill["conflict_notes"]:
-            return self._write(bill, dict(cleared, state="waiting", waiting_reason="conflict"))
         if not bill["partner_id"]:
             return self._write(bill, dict(cleared, state="waiting", waiting_reason="vendor_not_found"))
         number = normalize_identifier(bill["name"])
@@ -206,6 +148,7 @@ class BillMatcher:
         posted = self._posted(vendor, number)
         if posted:
             return self._write(bill, dict(cleared, state="bill_confirmed", bill_id=posted[0]["id"],
+                                          purchase_id=self._order_of(posted[0]["id"]),
                                           posted_bill_warning=False, match_notes=(
                                               f"Already billed: {posted[0]['display_name']} carries this invoice number.")))
         values = dict(cleared, posted_bill_warning=False)
@@ -227,6 +170,7 @@ class BillMatcher:
         free = [d for d in drafts if d["id"] not in taken]
         if len(free) == 1:
             return self._write(bill, dict(values, state="bill_found", bill_id=free[0]["id"],
+                                          purchase_id=self._order_of(free[0]["id"]),
                                           match_notes=self._total_note(bill, free[0]["amount_total"])))
         if drafts:
             return self._write(bill, dict(values, state="needs_review", match_notes=(
@@ -245,10 +189,16 @@ class BillMatcher:
                   or normalize_identifier(o["partner_ref"]) == number
                   or shipment & set().union(*(_keys(o[f] or "") for f in shipment_fields))]
         if len(orders) == 1:
+            other = self.odoo.search_read(SCRAPED_BILL, [("id", "!=", bill["id"]), ("purchase_id", "=", orders[0]["id"])],
+                                          ["name"])
+            if other:
+                return self._write(bill, dict(values, state="needs_review", purchase_id=orders[0]["id"], match_notes=(
+                    f"Duplicate purchase order: {orders[0]['name']} is already matched to scraped bill "
+                    f"{', '.join(o['name'] for o in other)}.")))
             return self._write(bill, self._with_po_bill(values, bill, orders[0], number))
         if orders:
             return self._write(bill, dict(values, state="needs_review", match_notes=(
-                f"Purchase orders {', '.join(o['name'] for o in orders)} fit: choose one.")))
+                f"Duplicate purchase orders {', '.join(o['name'] for o in orders)} fit: choose one.")))
         return self._write(bill, dict(values, state="ready_for_po",
                                       match_notes="No draft bill or purchase order of this vendor fits."))
 
@@ -273,6 +223,13 @@ class BillMatcher:
                         match_notes=self._total_note(bill, move["amount_total"]))
         return dict(values, state="bill_confirmed", bill_id=move["id"], match_notes=(
             f"Already billed: {move['display_name']} is the bill of purchase order {order['name']}."))
+
+    def _order_of(self, move_id):
+        """The one purchase order a vendor bill's lines come from, else False (none, or several)."""
+        orders = {m2o_id(line["purchase_order_id"]) for line in self.odoo.search_read(
+            "account.move.line", [("move_id", "=", move_id), ("purchase_line_id", "!=", False)],
+            ["purchase_order_id"]) if line["purchase_order_id"]}
+        return orders.pop() if len(orders) == 1 else False
 
     def _po_bills(self, order_id):
         return self.odoo.call("purchase.order", "read", [order_id], ["invoice_ids"])[0]["invoice_ids"] or []

@@ -40,7 +40,7 @@ MODEL_NAMES = {
     "b2b.ocr.booking": "booking", "b2b.ocr.booking.container": "booking container",
     "b2b.ocr.booking.invoice": "booking invoice", "b2b.ocr.booking.bl": "booking B/L",
     "b2b.ocr.booking.conflict": "booking conflict", "b2b.ocr.booking.container.change": "container change",
-    "b2b.ocr.scraped.bill": "scraped bill", "b2b.ocr.scraped.bill.line": "scraped bill line",
+    "b2b.ocr.scraped.bill": "scraped bill",
 }
 # Fields that name the record in the activity log, first found wins.
 NAME_FIELDS = ("booking_number", "external_key", "invoice_number", "container_no", "container_number", "bl_number", "name")

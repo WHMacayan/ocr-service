@@ -39,16 +39,13 @@ INVOICE_PROMPT = """You read one supplier document for an accounts payable team 
 - Copy values exactly as printed; null when not printed. Never guess or calculate.
 - invoice_date: YYYY-MM-DD. currency: ISO code as printed or clearly shown by its symbol.
 - po_numbers: purchase order numbers printed on the document.
-- containers: container numbers (4 letters + 7 digits).
-- lines: every charge or item line of the invoice, in printed order: description, part_number, quantity, unit_price and the line amount, each as printed (null when the line does not print it). Leave out subtotals, taxes shown as totals, and the grand total.
-- A line's description is that line's own item text: for goods, its size, pattern or model and specifications as printed on the line (for example "235/40ZR19 GRAND SPORT A/S 96/XL_W"); never a heading or brand shared by every line.
-- part_number: the line's item code, part number, SKU or article number as printed on that line; null when the line prints none."""
+- containers: container numbers (4 letters + 7 digits)."""
 
 # Earlier defaults of the prompts, by fingerprint (sha256 of the text with its spacing collapsed, first 16
 # characters). A saved prompt that is one of them was never edited, so it moves to the current default;
 # a prompt changed on the settings page is kept.
 EARLIER_PROMPTS = {
-    "invoice_prompt": {"6302e111dea481aa", "4502e6950b7a3818"},
+    "invoice_prompt": {"6302e111dea481aa", "4502e6950b7a3818", "74a2b0fc8910a85b"},
     "freight_prompt": {"e33e906ba288143f"},
 }
 

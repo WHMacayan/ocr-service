@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from app.flows.bills import BillMatcher
+from app.flows.bills import _READ, BillMatcher
 from app.documents.extract import checked, email_values
 from app.documents.text import newest_message_text, normalize_identifier, parse_month_date
 from fakes import doc, FakeOdoo, make_booker, mapping
@@ -191,18 +191,70 @@ def test_no_bill_no_po_is_ready_for_po():
     assert odoo.rows("b2b.ocr.scraped.bill")[scraped_id]["state"] == "ready_for_po"
 
 
-def test_invoice_lines_are_written_once():
+def test_no_bill_falls_back_to_the_purchase_order_and_then_its_bill():
     odoo = FakeOdoo()
     matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
-    lines = [{"description": "TIRE 205/55R16", "quantity": 400, "unit_price": 25.5, "amount": 10200},
-             {"description": "Freight", "quantity": None, "unit_price": None, "amount": 300}]
-    invoice = doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-9", lines=lines)
+    order = odoo.add("purchase.order", partner_id=7, company_id=1, state="purchase", name="PO0042",
+                     partner_ref="", amount_total=100.0, invoice_ids=[])
+    invoice = doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-9", po_numbers=["PO0042"],
+                  amount_total=100.0, currency="USD")
     _s, _n, scraped_id = matcher.take(invoice)
-    matcher.take(doc("supplier_invoice", "copy.pdf", sender="ar@factory.cn", invoice_number="INV-9", lines=lines))
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
+    assert row["state"] == "po_found" and row["purchase_id"] == order  # no bill anywhere: the order is found
 
-    written = sorted(odoo.rows("b2b.ocr.scraped.bill.line").values(), key=lambda line: line["amount"])
-    assert [(w["bill_scrape_id"], w["description"], w["quantity"], w["price_unit"], w["amount"]) for w in written] == [
-        (scraped_id, "Freight", 0, 0, 300), (scraped_id, "TIRE 205/55R16", 400, 25.5, 10200)]
+    bill = odoo.add("account.move", partner_id=7, company_id=1, move_type="in_invoice", state="draft",
+                    ref="", display_name="BILL/9", amount_total=100.0)
+    odoo.rows("purchase.order")[order]["invoice_ids"] = [bill]
+    matcher.match(odoo.call("b2b.ocr.scraped.bill", "read", [scraped_id], _READ)[0])  # checked again
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
+    assert row["state"] == "bill_found" and row["bill_id"] == bill and row["purchase_id"] == order
+
+
+def test_a_bill_found_also_names_its_purchase_order():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
+    order = odoo.add("purchase.order", partner_id=7, company_id=1, state="purchase", name="PO0042",
+                     partner_ref="", amount_total=100.0, invoice_ids=[])
+    bill = odoo.add("account.move", partner_id=7, company_id=1, move_type="in_invoice", state="draft",
+                    ref="INV-5", display_name="BILL/5", amount_total=100.0)
+    po_line = odoo.add("purchase.order.line", order_id=order)
+    odoo.add("account.move.line", move_id=bill, purchase_line_id=po_line, purchase_order_id=order)
+    scraped = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-5"))[2]
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped]
+    assert row["state"] == "bill_found" and row["bill_id"] == bill and row["purchase_id"] == order
+
+
+def test_an_order_already_matched_to_another_scraped_bill_is_flagged_duplicate():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
+    order = odoo.add("purchase.order", partner_id=7, company_id=1, state="purchase", name="PO0042",
+                     partner_ref="", amount_total=100.0, invoice_ids=[])
+    first = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-1", po_numbers=["PO0042"]))[2]
+    second = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-2", po_numbers=["PO0042"]))[2]
+    assert odoo.rows("b2b.ocr.scraped.bill")[first]["state"] == "po_found"
+    row = odoo.rows("b2b.ocr.scraped.bill")[second]
+    assert row["state"] == "needs_review" and row["purchase_id"] == order
+    assert row["match_notes"].startswith("Duplicate purchase order: PO0042")
+
+
+def test_several_orders_that_fit_are_flagged_duplicate():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
+    for name in ("PO0042", "PO0043"):
+        odoo.add("purchase.order", partner_id=7, company_id=1, state="purchase", name=name, partner_ref="",
+                 amount_total=1.0, invoice_ids=[])
+    scraped = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-9",
+                               po_numbers=["PO0042", "PO0043"]))[2]
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped]
+    assert row["state"] == "needs_review" and row["match_notes"].startswith("Duplicate purchase orders PO0042, PO0043")
+
+
+def test_invoice_lines_are_not_written():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
+    matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-9",
+                     lines=[{"description": "TIRE", "quantity": 1, "unit_price": 2, "amount": 2}]))
+    assert not odoo.rows("b2b.ocr.scraped.bill.line")
 
 
 def test_vendor_is_found_by_the_mappings_printed_name():

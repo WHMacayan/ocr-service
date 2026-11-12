@@ -46,12 +46,6 @@ INVOICE_SCHEMA = {
         "amount_total": _nullable("number"),
         "po_numbers": {"type": "array", "items": {"type": "string"}},
         "containers": {"type": "array", "items": {"type": "string"}},
-        "lines": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False,
-            "required": ["description", "part_number", "quantity", "unit_price", "amount"],
-            "properties": {"description": _nullable("string"), "part_number": _nullable("string"),
-                           "quantity": _nullable("number"), "unit_price": _nullable("number"),
-                           "amount": _nullable("number")}}},
     },
 }
 for _schema in (FREIGHT_SCHEMA, INVOICE_SCHEMA):
@@ -93,9 +87,6 @@ def checked(parsed, text):
     for key in ("etd", "eta", "invoice_date"):
         if key in values and not date_appears_in(text, values[key]):
             values.pop(key)
-    for line in values.get("lines") or []:
-        if line.get("part_number") and not appears_in(text, line["part_number"]):
-            line["part_number"] = None
     return values
 
 

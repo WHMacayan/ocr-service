@@ -77,17 +77,11 @@ def create_app():
 
     @app.cli.command("clean-up")
     @click.option("--apply", is_flag=True, help="Write the changes; without it, only report them.")
-    @click.option("--only", type=click.Choice(["conflicts", "bills", "freight"]), multiple=True,
-                  help="One pass (repeatable); all three when left out.")
-    @click.option("--limit", type=int, help="Bills read again at most (bills pass).")
-    def clean_up_command(apply, only, limit):
-        """After the booking and bill rules changed: close the conflicts they settle, read the ready bills'
-        invoices again, give forwarders' invoices in Bill Matching to their bookings (see flows/cleanup.py)."""
+    def clean_up_command(apply):
+        """After the booking rules changed: close the conflicts they settle (see flows/cleanup.py)."""
         from .flows import cleanup
         from .odoo.client import Odoo
-        passes = {"conflicts": lambda db, odoo, cid: cleanup.close_false_conflicts(db, odoo, cid, apply),
-                  "bills": lambda db, odoo, cid: cleanup.reread_ready_bills(db, odoo, cid, apply, limit),
-                  "freight": lambda db, odoo, cid: cleanup.freight_from_bills(db, odoo, cid, apply)}
+        passes = {"conflicts": lambda db, odoo, cid: cleanup.close_false_conflicts(db, odoo, cid, apply)}
         db = store.connect()
         try:
             for connection in store.connections(db, on=True):

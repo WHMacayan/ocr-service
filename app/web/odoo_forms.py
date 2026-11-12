@@ -14,16 +14,15 @@ def child(model, inverse, columns, link=None):
 
 SCRAPED_BILL = {
     "model": "b2b.ocr.scraped.bill", "purpose": "bill_matching", "title": "name",
-    "status": "state", "steps": ("waiting", "ready_for_po", "po_found", "bill_found", "bill_confirmed"),
-    "alerts": (("posted_bill_warning", "warn"), ("conflict_notes", "bad")),
+    "status": "state", "steps": ("to_read", "waiting", "ready_for_po", "po_found", "bill_found", "bill_confirmed"),
+    "alerts": (("posted_bill_warning", "warn"),),
     "sections": [
         ("Vendor", ["partner_id", "vendor_name", "vendor_vat", "sender_email", "waiting_reason"]),
         ("Invoice", ["invoice_date", "currency_name", "amount_total", "po_numbers", "master_bl", "house_bl",
                      "container_numbers", "source"]),
         ("Match", ["bill_id", "purchase_id", "match_score", "match_notes"]),
     ],
-    "tabs": [("Lines", child("b2b.ocr.scraped.bill.line", "bill_scrape_id",
-                             ["description", "quantity", "price_unit", "amount"]))],
+    "tabs": [],
 }
 
 CUSTOMS_ENTRY = {
@@ -60,8 +59,7 @@ CUSTOMS_BATCH = {
     ],
 }
 
-BILL_LIST = ["name", "partner_id", "invoice_date", "amount_total", "currency_name", "state", "bill_id", "purchase_id",
-             "line_ids"]
+BILL_LIST = ["name", "partner_id", "invoice_date", "amount_total", "currency_name", "state", "bill_id", "purchase_id"]
 BATCH_LIST = ["create_date", "name", "entry_count", "pass_count", "review_count", "fail_count", "total_amount",
               "status"]
 

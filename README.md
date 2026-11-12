@@ -49,3 +49,8 @@ record of which emails were read.
 
     pip install -r requirements-dev.txt
     pytest
+
+## Parked ideas
+
+- **Create the vendor purchase order from a scraped bill.** Not built. A bill with no matching bill or
+  purchase order stays in Ready to Create PO for a person; the service never creates ERP records.

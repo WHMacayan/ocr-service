@@ -1162,3 +1162,9 @@ tbody.group-shut tr:not(.o-group-row), .mail-list > .group-shut { display: none;
 .input-pair { display: flex; gap: 8px; min-width: 0; }
 .input-pair > input { width: 90px; flex: none; }
 .input-pair > select { flex: 1; min-width: 0; }
+
+/* Column sort (static/js/app.js): a header sorts its table; the arrow shows which way. */
+.data > thead th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.data > thead th.sortable:hover { color: var(--text); }
+.data > thead th[aria-sort]::after { content: "\25B2"; font-size: 0.7em; margin-left: 6px; opacity: 0.7; }
+.data > thead th[aria-sort="descending"]::after { content: "\25BC"; }
