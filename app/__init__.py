@@ -86,11 +86,38 @@ def create_app():
         try:
             for connection in store.connections(db, on=True):
                 odoo = Odoo.from_connection(db, connection)
-                for name in only or passes:
+                for name in passes:
                     outcome = passes[name](db, odoo, connection["id"])
                     print(f"{connection['name']} · {name}{'' if apply else ' (report only)'}:")
                     for reason, count in outcome.most_common():
                         print(f"  {count:5}  {reason}")
+        finally:
+            db.close()
+
+    @app.cli.command("import-booking-report")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
+    @click.option("--apply", is_flag=True, help="Write the rates; without it, only report them.")
+    @click.option("--out", type=click.Path(dir_okay=False), help="Save the row-by-row result as an Excel file.")
+    def import_booking_report_command(path, apply, out):
+        """Write the Booking Report's agreed rate per container to each booking's Cost per Container,
+        in every Odoo connection that is on (see flows/booking_report.py)."""
+        from openpyxl import load_workbook
+
+        from .flows import booking_report
+        from .odoo.client import Odoo
+        rows = booking_report.read_rows(load_workbook(path, read_only=True, data_only=True))
+        print(f"{len(rows)} booking rows read from {path}")
+        db = store.connect()
+        try:
+            for connection in store.connections(db, on=True):
+                odoo = Odoo.from_connection(db, connection)
+                outcomes, summary = booking_report.import_rates(odoo, rows, apply=apply)
+                print(f"{connection['name']}{'' if apply else ' (report only, nothing written)'}:")
+                for reason, count in summary.most_common():
+                    print(f"  {count:5}  {reason}")
+                if out:
+                    booking_report.write_report(out, outcomes)
+                    print(f"  row-by-row result: {out}")
         finally:
             db.close()
 
