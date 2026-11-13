@@ -1,0 +1,59 @@
+{% from "layout/_icons.html" import icon %}
+
+{# The emails that built a record, oldest first: who sent each, a line of its text, its attachments and what
+   it changed in this record. An email still waiting on a person is marked, with Process again beside it. #}
+{% macro conversation(thread) -%}
+{%- if thread %}
+<ol class="convo">
+  {%- for m in thread %}
+  {%- set waiting = m.state in ("review", "failed") %}
+  <li class="convo-msg {{ 'waiting ' ~ m.state if waiting }}">
+    <div class="convo-top">
+      <b class="clip-1">{{ m.sender or "Unknown sender" }}</b>
+      <span class="faint">{{ m.mailbox_name }}</span>
+      <span class="convo-when num">{{ m.received|when(short=True) }}</span>
+    </div>
+    <a class="convo-subject" href="{{ url_for('web.message', message_id=m.id) }}">{{ m.subject or "No subject" }}</a>
+    {% if m.preview %}<p class="convo-preview">{{ m.preview }}</p>{% endif %}
+    {% if m.files %}<div class="convo-files">{% for f in m.files %}<span class="file-chip">{{ icon("file") }}{{ f.filename }}</span>{% endfor %}</div>{% endif %}
+    {% if m.wrote %}
+    {% set actions = m.wrote|map(attribute="action")|unique|list %}
+    <div class="convo-wrote">{{ icon("check") }}{{ actions|join(" and ")|capitalize }} this record
+      {%- set details = m.wrote|selectattr("detail")|list %}
+      {% if details %}<details class="detail-fold" id="wrote-{{ m.id }}"><summary>Fields</summary><pre class="block">{% for c in details %}{{ c.detail }}{{ "\n" if not loop.last }}{% endfor %}</pre></details>{% endif %}
+    </div>
+    {% elif waiting %}
+    <div class="convo-wait">{{ icon("alert") }}<span>{{ m.note or ("Needs review" if m.state == "review" else "Failed") }}</span>
+      <form method="post" action="{{ url_for('web.retry', message_id=m.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn sm">{{ icon("rotate") }} Process again</button></form></div>
+    {% else %}
+    <div class="convo-none">Nothing written to this record by this email</div>
+    {% endif %}
+  </li>
+  {%- endfor %}
+</ol>
+{%- else %}<p class="faint">No email of this service fed this record.</p>{% endif %}
+{%- endmacro %}
+
+{# Every attachment of those emails and what became of it in this record. #}
+{% macro attachments(files) -%}
+<aside class="rec-aside" aria-label="Attachments">
+  <h3 class="aside-title">Attachments → Odoo</h3>
+  {%- if files %}
+  <ul class="att-list">
+    {%- for f in files %}
+    <li class="att {{ 'fed' if f.fed else ('waiting' if f.state in ('waiting', 'failed', 'new') else '') }}">
+      <span class="att-name">{{ icon("file") }}<span class="clip-1" title="{{ f.filename }}">{{ f.filename }}</span></span>
+      <span class="att-kind">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }}</span>
+      {% if f.fed %}<span class="att-fed">→ {{ {"created": "Created this record", "updated": "Updated this record",
+                                                "deleted": "Removed from this record"}.get(f.fed, "Went into this record") }}</span>
+      {% elif f.state == "waiting" %}<span class="att-wait">Waiting for its booking</span>
+      {% elif f.state == "failed" %}<span class="att-wait">Failed{% if f.note %}: {{ f.note }}{% endif %}</span>
+      {% elif f.state == "new" %}<span class="att-wait">Not processed yet</span>
+      {% else %}<span class="att-none">Nothing written here{% if f.note %} · {{ f.note }}{% endif %}</span>{% endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}<p class="faint">No attachments.</p>{% endif %}
+</aside>
+{%- endmacro %}

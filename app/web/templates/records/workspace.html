@@ -1,0 +1,21 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% set split = true %}
+{% block content %}
+<div class="split split-wide">
+  {% include "records/_pane.html" %}
+  <section class="pane pane-detail" id="detail" aria-label="Record">
+    <div class="detail-empty">
+      <div class="empty-icon">{{ icon("layers") }}</div>
+      {% if items %}
+      <h2>Pick one on the left</h2>
+      <p>You'll see what Odoo holds now, the email conversation that built it, and which attachment fed which part.
+        Use <kbd>↑</kbd> <kbd>↓</kbd> to move through the list.</p>
+      {% else %}
+      <h2>Nothing written to Odoo yet</h2>
+      <p>Once the service reads an email and writes to Odoo, the record shows up here with its conversation.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -36,15 +36,15 @@
           </span>
           <span class="mail-from">{{ m.sender|highlight(search_terms) }} · {{ m.mailbox_name }}</span>
           <span class="mail-meta">
-            <span class="state-text s-{{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span>
+            <span class="state-pill s-{{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span>
+            {%- if m.files %}<span class="mail-files" title="{{ m.files }} file{{ 's' if m.files != 1 }}">{{ icon("file") }}{{ m.files }}</span>{% endif %}
             {%- if odoo and odoo.records %}
               {% for r in odoo.records[:2] %}<span class="odoo-chip {{ r.action }}"><b>{{ r.kind }}</b> {{ r.label|highlight(search_terms) }} <span>{{ r.action }}</span></span>{% endfor %}
               {% if odoo.other %}<span class="faint">+{{ odoo.other }} line change{{ "s" if odoo.other != 1 }}</span>{% endif %}
             {%- elif odoo and odoo.other %}<span class="faint">{{ odoo.other }} line change{{ "s" if odoo.other != 1 }}</span>
             {%- elif m.note %}<span class="faint clip-1" title="{{ m.note }}">{{ m.note }}</span>
             {%- elif m.state in ("done", "skipped") and m.processed_at %}<span class="nothing">Nothing written</span>
-            {%- elif m.state in ("done", "skipped") %}<span class="nothing" title="Processed before the service kept this record.">Not recorded</span>
-            {%- elif m.files %}<span class="faint">{{ m.files }} file{{ "s" if m.files != 1 }}</span>{% endif %}
+            {%- elif m.state in ("done", "skipped") %}<span class="nothing" title="Processed before the service kept this record.">Not recorded</span>{% endif %}
             {%- if m.thread and m.thread > 1 %}<span class="thread-count">{{ m.thread }} in thread</span>{% endif %}
             {%- if m.created_at %}<span class="faint stamp">Created {{ m.created_at|when(short=True) }}{% if m.updated_at and m.updated_at != m.created_at %} · Modified {{ m.updated_at|when(short=True) }}{% endif %}</span>{% endif %}
           </span>

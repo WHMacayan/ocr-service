@@ -53,8 +53,11 @@ def connect(path=None):
     db.fernet = _fernet(path.parent)
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA foreign_keys=ON")
+    db.executescript(SCHEMA.read_text())
     with db:
-        db.executescript(SCHEMA.read_text())
+        # One connection at a time: the triggers below are dropped and made again, and two requests
+        # doing that at once crashed one of them (an error page that looked like being signed out).
+        db.execute("BEGIN IMMEDIATE")
         for table, column, kind in ADDED_COLUMNS:
             if column not in {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")

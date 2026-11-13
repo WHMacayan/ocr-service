@@ -8,93 +8,36 @@
   <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
   <div class="detail" id="email-detail" data-live>
     <a class="back-link" href="{{ url_for('web.messages', **filters) }}">{{ icon("back") }} Emails</a>
-    <div class="o-form-header">
+    <header class="email-head">
+      <div class="email-head-main">
+        <h2 id="detail-title" tabindex="-1">{{ message.subject or "No subject" }}</h2>
+        <div class="email-meta">
+          <span class="mailbox-chip">{{ icon("inbox") }}{{ message.mailbox_name }}</span>
+          <span><b>{{ message.sender }}</b></span>
+          <span class="faint">{{ message.received|when or "Received date unknown" }}</span>
+        </div>
+      </div>
       <form class="actions" method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="btn {{ '' if message.state in ('failed', 'review') else 'secondary' }}">{{ icon("rotate") }} Process again</button>
       </form>
-      <ol class="o-statusbar" aria-label="State">
-        {% for s in route %}<li {% if message.state == s %}aria-current="step"{% endif %}>{{ state_labels[s] }}</li>{% endfor %}
-        {% if message.state in off_route %}<li aria-current="step" class="off-{{ message.state }}">{{ state_labels[message.state] }}</li>{% endif %}
-      </ol>
-    </div>
-    <div class="o-sheet">
-    <header class="detail-head">
-      <div class="detail-meta">{{ message.mailbox_name }} · {{ message.sender }} · {{ message.received|when or "Received date unknown" }}</div>
-      <div class="detail-title">
-        <h2 id="detail-title" tabindex="-1">{{ message.subject or "No subject" }}</h2>
-      </div>
     </header>
+    <ol class="o-statusbar" aria-label="State">
+      {% for s in route %}<li {% if message.state == s %}aria-current="step"{% endif %}>{{ state_labels[s] }}</li>{% endfor %}
+      {% if message.state in off_route %}<li aria-current="step" class="off-{{ message.state }}">{{ state_labels[message.state] }}</li>{% endif %}
+    </ol>
 
     {% if message.note %}
     <div class="callout {{ 'bad' if message.state == 'failed' else 'warn' }}">{{ icon("alert") }}<span>{{ message.note }}</span></div>
     {% endif %}
 
-    <section class="card kv-card">
-      <h2>Summary</h2>
-      <dl class="kv">
-        <div class="kv-row"><dt>Files</dt><dd>{{ files|length }}</dd></div>
-        <div class="kv-row"><dt>Records in Odoo</dt><dd>{{ (written.records|length) if written else 0 }}</dd></div>
-        <div class="kv-row"><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
-        <div class="kv-row"><dt>Created</dt><dd>{{ message.created_at|when or "–" }}</dd></div>
-        <div class="kv-row"><dt>Last modified</dt><dd>{{ message.updated_at|when or "–" }}</dd></div>
-      </dl>
-    </section>
-
-    {% set copies = thread|sum(attribute="copies", start=[]) %}
-    {% if copies|length > 1 %}
-    {% set mailboxes = copies|map(attribute="mailbox_name")|unique|list %}
-    <section class="block">
-      <h3>Conversation</h3>
-      <p class="block-help">{{ thread|length }} email{{ "s" if thread|length != 1 }} in this thread, oldest first{% if mailboxes|length > 1 %}, read by {{ mailboxes[:-1]|join(", ") }} and {{ mailboxes[-1] }}{% endif %}. Open any copy to see what it did.</p>
-      <ol class="thread">
-        {% for email in thread %}
-        {% set here = email.copies|selectattr("id", "equalto", message.id)|list %}
-        <li class="thread-node {{ 'here' if here }}">
-          <span class="thread-dot"></span>
-          <div class="thread-body">
-            <div class="thread-top"><b class="clip-1">{{ email.sender or "Unknown sender" }}</b>
-              <span class="faint">{{ email.received|when(short=True) }}</span></div>
-            {% if email.subject != message.subject %}<div class="row-sub clip-1">{{ email.subject or "No subject" }}</div>{% endif %}
-            <div class="thread-copies">
-              {% for c in email.copies %}
-              <a class="copy-chip" href="{{ url_for('web.message', message_id=c.id, **filters) }}" {% if c.id == message.id %}aria-current="true"{% endif %}>
-                <span class="state-dot c-{{ c.state }}"></span>{{ c.mailbox_name }} · {{ state_labels.get(c.state, c.state) }}</a>
-              {% endfor %}
-            </div>
-          </div>
-        </li>
-        {% endfor %}
-      </ol>
-    </section>
-    {% endif %}
-
-    {% if targets %}
-    <section class="block">
-      <h3>Per Odoo connection</h3>
-      <p class="block-help">Where this email stands in each Odoo it is written to. A failure in one is retried there alone.</p>
-      <ul class="rows">
-        {% for t in targets %}
-        <li>
-          <span class="row-main">
-            <span class="row-name"><b>{{ t.name }}</b>
-              {% if t.is_production %}<span class="badge failed">Production</span>{% endif %}
-              {% if not t.active %}<span class="faint">Off</span>{% endif %}</span>
-            {% if t.note %}<span class="row-sub">{{ t.note }}</span>{% endif %}</span>
-          <span class="row-end">
-            <span class="faint">{{ t.attempts or 0 }} attempt{{ "s" if (t.attempts or 0) != 1 }}</span>
-            <span class="badge {{ t.state or 'new' }}">{{ state_labels.get(t.state or "new", t.state) }}</span>
-            {% if t.state and t.state != "new" %}
-            <form method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
-              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="connection_id" value="{{ t.id }}">
-              <button class="btn ghost sm">{{ icon("rotate") }} Again here</button></form>
-            {% endif %}
-          </span>
-        </li>
-        {% endfor %}
-      </ul>
-    </section>
-    {% endif %}
+    <dl class="stat-grid email-stats">
+      <div><dt>Files</dt><dd>{{ files|length }}</dd></div>
+      <div><dt>Records in Odoo</dt><dd>{{ (written.records|length) if written else 0 }}</dd></div>
+      <div><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
+      <div><dt>Created</dt><dd class="small">{{ message.created_at|when or "–" }}</dd></div>
+      <div><dt>Last modified</dt><dd class="small">{{ message.updated_at|when or "–" }}</dd></div>
+    </dl>
 
     <section class="block">
       <h3>In Odoo</h3>
@@ -129,7 +72,7 @@
     </section>
 
     <section class="block">
-      <h3>Files</h3>
+      <h3>Attachments</h3>
       {% if files %}
       <ul class="rows">
         {% for f in files %}
@@ -147,13 +90,67 @@
       {% endif %}
     </section>
 
+    {% if targets %}
+    <section class="block">
+      <h3>Per Odoo connection</h3>
+      <p class="block-help">Where this email stands in each Odoo it is written to. A failure in one is retried there alone.</p>
+      <ul class="rows">
+        {% for t in targets %}
+        <li>
+          <span class="row-main">
+            <span class="row-name"><b>{{ t.name }}</b>
+              {% if t.is_production %}<span class="badge failed">Production</span>{% endif %}
+              {% if not t.active %}<span class="faint">Off</span>{% endif %}</span>
+            {% if t.note %}<span class="row-sub">{{ t.note }}</span>{% endif %}</span>
+          <span class="row-end">
+            <span class="faint">{{ t.attempts or 0 }} attempt{{ "s" if (t.attempts or 0) != 1 }}</span>
+            <span class="badge {{ t.state or 'new' }}">{{ state_labels.get(t.state or "new", t.state) }}</span>
+            {% if t.state and t.state != "new" %}
+            <form method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
+              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="connection_id" value="{{ t.id }}">
+              <button class="btn ghost sm">{{ icon("rotate") }} Again here</button></form>
+            {% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% set copies = thread|sum(attribute="copies", start=[]) %}
+    {% if copies|length > 1 %}
+    {% set mailboxes = copies|map(attribute="mailbox_name")|unique|list %}
+    <section class="block">
+      <h3>Conversation</h3>
+      <p class="block-help">{{ thread|length }} email{{ "s" if thread|length != 1 }} in this thread, oldest first{% if mailboxes|length > 1 %}, read by {{ mailboxes[:-1]|join(", ") }} and {{ mailboxes[-1] }}{% endif %}. Open any copy to see what it did.</p>
+      <ol class="thread">
+        {% for email in thread %}
+        {% set here = email.copies|selectattr("id", "equalto", message.id)|list %}
+        <li class="thread-node {{ 'here' if here }}">
+          <span class="thread-dot"></span>
+          <div class="thread-body">
+            <div class="thread-top"><b class="clip-1">{{ email.sender or "Unknown sender" }}</b>
+              <span class="faint">{{ email.received|when(short=True) }}</span></div>
+            {% if email.subject != message.subject %}<div class="row-sub clip-1">{{ email.subject or "No subject" }}</div>{% endif %}
+            <div class="thread-copies">
+              {% for c in email.copies %}
+              <a class="copy-chip" href="{{ url_for('web.message', message_id=c.id, **filters) }}" {% if c.id == message.id %}aria-current="true"{% endif %}>
+                <span class="state-dot c-{{ c.state }}"></span>{{ c.mailbox_name }} · {{ state_labels.get(c.state, c.state) }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+
     {% if message.skipped_attachments %}
     <details class="block fold" id="skipped-attachments"><summary>Attachments not saved</summary><pre class="block">{{ message.skipped_attachments }}</pre></details>
     {% endif %}
     {% if message.body_text %}
     <details class="block fold" id="email-text"><summary>Email text</summary><pre class="block">{{ message.body_text }}</pre></details>
     {% endif %}
-    </div>
   </div>
   </section>
 </div>

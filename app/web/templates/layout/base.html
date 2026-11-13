@@ -6,52 +6,65 @@
   <meta name="color-scheme" content="light dark">
   <title>{% if title %}{{ title }} · {% endif %}OCR Service</title>
   <script src="{{ url_for('static', filename='js/theme.js') }}?v=12"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=38">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=40">
 </head>
 <body>
 {% set here = request.path %}
 
 {% if session.signed_in %}
-{% set setup_here = here.startswith('/settings') or here.startswith('/connections') or here.startswith('/password')
-                    or forms.keys()|select("in", [here.split('/')[1]])|list %}
+{% set form_icons = {"mailboxes": "mail", "vendor-mappings": "users", "subject-formats": "type"} %}
 <div class="shell">
-  {# Odoo-style top bar: app switcher, app name, menus; search, theme and the user on the right. #}
-  <nav class="o-navbar" id="rail" aria-label="Main">
-    <button class="o-nav-btn o-burger" type="button" data-menu aria-controls="o-menus" aria-expanded="false" aria-label="Menu">{{ icon("menu") }}</button>
-    <a class="o-brand" href="{{ url_for('web.messages') }}"><span class="o-brand-mark">{{ icon("scan") }}</span>OCR Service</a>
-    <div class="o-menus" id="o-menus">
-      <a href="{{ url_for('web.messages') }}" {% if here.startswith('/messages') %}aria-current="page"{% endif %}>Emails
-        <span class="o-count" id="rail-failed" data-live title="Failed emails" {% if not failed_count %}hidden{% endif %}>{{ failed_count }}</span></a>
-      <a href="{{ url_for('web.booking_list') }}" {% if here.startswith('/bookings') %}aria-current="page"{% endif %}>Bookings</a>
-      <a href="{{ url_for('web.scraped_bills') }}" {% if here.startswith('/scraped-bills') %}aria-current="page"{% endif %}>Scraped bills</a>
-      <a href="{{ url_for('web.customs_batches') }}" {% if here.startswith('/customs') %}aria-current="page"{% endif %}>Customs</a>
+  {# Phones: a slim bar that opens the sidebar as a drawer. #}
+  <header class="mobile-bar">
+    <button class="o-nav-btn" type="button" data-menu aria-controls="rail" aria-expanded="false" aria-label="Menu">{{ icon("menu") }}</button>
+    <a class="side-brand" href="{{ url_for('web.booking_list') }}"><span class="side-brand-mark">{{ icon("scan") }}</span>OCR Service</a>
+    <button class="o-nav-btn" type="button" data-search-open aria-label="Search (Ctrl K)">{{ icon("search") }}</button>
+  </header>
+  <div class="scrim" data-menu-close></div>
+
+  {# The sidebar: every page by what it is for. Replaced on each page change (static/js/app.js), so the current page stays marked. #}
+  <nav class="side" id="rail" aria-label="Main">
+    <a class="side-brand" href="{{ url_for('web.booking_list') }}"><span class="side-brand-mark">{{ icon("scan") }}</span>OCR Service</a>
+    <button class="side-search" type="button" data-search-open title="Search everything (Ctrl K)">{{ icon("search") }}<span>Search</span><kbd>Ctrl K</kbd></button>
+
+    <div class="side-group">
+      <span class="side-heading">Work</span>
+      <a class="side-link" href="{{ url_for('web.booking_list') }}" {% if here.startswith('/bookings') %}aria-current="page"{% endif %}>{{ icon("layers") }}Bookings</a>
+      <a class="side-link" href="{{ url_for('web.scraped_bills') }}" {% if here.startswith('/scraped-bills') %}aria-current="page"{% endif %}>{{ icon("receipt") }}Scraped bills</a>
+      <a class="side-link" href="{{ url_for('web.customs_batches') }}" {% if here.startswith('/customs') %}aria-current="page"{% endif %}>{{ icon("landmark") }}Customs</a>
       {# Freight Payables is parked: hidden from the menu, its pages and worker kept. Restore this line to show it again.
-      <a href="{{ url_for('web.payables_emails') }}" {% if here.startswith('/payables') %}aria-current="page"{% endif %}>Freight Payables</a> #}
-      <a href="{{ url_for('web.activity') }}" {% if here.startswith('/activity') %}aria-current="page"{% endif %}>Activity</a>
-      <details class="o-dropdown">
-        <summary {% if setup_here %}aria-current="page"{% endif %}>Configuration</summary>
-        <div class="o-dropdown-menu">
-          {% for key, f in forms.items() %}<a href="{{ url_for('web.records', key=key) }}">{{ f.title }}</a>{% endfor %}
-          <a href="{{ url_for('web.settings') }}">Settings</a>
+      <a class="side-link" href="{{ url_for('web.payables_emails') }}" {% if here.startswith('/payables') %}aria-current="page"{% endif %}>{{ icon("file") }}Freight Payables</a> #}
+      <a class="side-link" href="{{ url_for('web.messages') }}" {% if here.startswith('/messages') %}aria-current="page"{% endif %}>{{ icon("inbox") }}All emails
+        <span class="side-count" id="rail-failed" data-live title="Failed emails" {% if not failed_count %}hidden{% endif %}>{{ failed_count }}</span></a>
+    </div>
+    <div class="side-group">
+      <span class="side-heading">Monitor</span>
+      <a class="side-link" href="{{ url_for('web.activity') }}" {% if here.startswith('/activity') %}aria-current="page"{% endif %}>{{ icon("activity") }}Activity</a>
+    </div>
+    <div class="side-group">
+      <span class="side-heading">Setup</span>
+      {% for key, f in forms.items() %}
+      <a class="side-link" href="{{ url_for('web.records', key=key) }}" {% if here.split('/')[1] == key %}aria-current="page"{% endif %}>{{ icon(form_icons.get(key, "sliders")) }}{{ f.title }}</a>
+      {% endfor %}
+      <a class="side-link" href="{{ url_for('web.settings') }}" {% if here.startswith('/settings') or here.startswith('/connections') %}aria-current="page"{% endif %}>{{ icon("sliders") }}Settings</a>
+    </div>
+
+    <div class="side-foot">
+      <details class="o-dropdown o-user">
+        <summary aria-label="Account"><span class="o-avatar">A</span><span class="o-user-name">Administrator</span></summary>
+        <div class="o-dropdown-menu up">
+          <span class="o-dropdown-head">Signed in as admin</span>
+          <a href="{{ url_for('web.change_password') }}">{{ icon("key") }}Change password</a>
+          <form method="post" action="{{ url_for('web.logout') }}" data-full>
+            <input type="hidden" name="csrf" value="{{ csrf }}"><button>{{ icon("logout") }}Log out</button></form>
         </div>
       </details>
-    </div>
-    <div class="o-systray">
-      <button class="o-nav-btn" type="button" data-search-open aria-label="Search (Ctrl K)" title="Search (Ctrl K)">{{ icon("search") }}</button>
       <button class="o-nav-btn" type="button" data-theme-toggle>
         <span class="theme-icon" data-theme-icon="system">{{ icon("monitor") }}</span>
         <span class="theme-icon" data-theme-icon="light">{{ icon("sun") }}</span>
         <span class="theme-icon" data-theme-icon="dark">{{ icon("moon") }}</span>
         <span class="visually-hidden" data-theme-label>Theme: match Windows</span></button>
-      <details class="o-dropdown o-user">
-        <summary aria-label="Account"><span class="o-avatar">A</span><span class="o-user-name">Administrator</span></summary>
-        <div class="o-dropdown-menu right">
-          <span class="o-dropdown-head">Admin</span>
-          <a href="{{ url_for('web.change_password') }}">Change password</a>
-          <form method="post" action="{{ url_for('web.logout') }}" data-full>
-            <input type="hidden" name="csrf" value="{{ csrf }}"><button>Log out</button></form>
-        </div>
-      </details>
     </div>
   </nav>
 
@@ -106,6 +119,6 @@
   {% endfor %}
 </div>
 
-<script src="{{ url_for('static', filename='js/app.js') }}?v=20"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=21"></script>
 </body>
 </html>

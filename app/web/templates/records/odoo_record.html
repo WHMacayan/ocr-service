@@ -1,65 +1,85 @@
 {% extends "layout/base.html" %}
 {% from "layout/_icons.html" import icon %}
-{% from "layout/_ui.html" import control_panel, field_group, notebook, emails_rows, statusbar with context %}
+{% from "layout/_ui.html" import field_group, notebook, statusbar with context %}
+{% from "records/_conversation.html" import conversation, attachments with context %}
+{% set split = true %}
 {% block content %}
-{% call control_panel(title, crumbs=crumbs, intro=record.subtitle if record else None) %}
-  <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
-  <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
-{% endcall %}
+{% set back_label, back_href = crumbs[0] %}
+<div class="split split-wide has-detail">
+  {% include "records/_pane.html" %}
+  <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
+  <div class="detail rec-detail">
+    <a class="back-link" href="{{ back_href }}">{{ icon("back") }} {{ back_label }}</a>
 
-{% if error %}
-<div class="callout warn">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>
-{% elif not record %}
-<div class="callout bad">{{ icon("alert") }}<span>This record is no longer in Odoo: it was deleted there.</span></div>
-{% endif %}
+    <header class="rec-head">
+      <div class="rec-head-main">
+        <span class="eyebrow">{% for label, href in crumbs[1:] %}<a href="{{ href }}">{{ label }}</a> / {% endfor %}{{ {"bills": "Scraped bill", "customs": "Customs entry" if crumbs|length > 1 or emails else "Customs batch"}.get(kind, "") }}</span>
+        <h2 id="detail-title" class="num" tabindex="-1">{{ title }}</h2>
+        {% if record and record.subtitle %}<span class="faint">{{ record.subtitle }}</span>{% endif %}
+        {% if created %}<span class="faint">In the OCR service since {{ created|when(short=True) }}{% if modified and modified != created %} · last change {{ modified|when(short=True) }}{% endif %}</span>{% endif %}
+      </div>
+      <div class="actions">
+        <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
+        <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
+      </div>
+    </header>
 
-{% if record %}
-{{ statusbar(record.steps) }}
-{% for kind, text in record.alerts %}
-<div class="callout {{ kind }}">{{ icon("alert") }}<span style="white-space:pre-line">{{ text }}</span></div>
-{% endfor %}
-{% endif %}
+    {% if error %}
+    <div class="callout warn">{{ icon("alert") }}<span>Odoo could not be read: {{ error }}</span></div>
+    {% elif not record %}
+    <div class="callout bad">{{ icon("alert") }}<span>This record is no longer in Odoo: it was deleted there.</span></div>
+    {% endif %}
 
-<div class="o-sheet o-record">
-  {% if created %}<p class="faint" style="margin:0 0 12px">In the OCR service: created {{ created|when }}{% if modified and modified != created %} · last modified {{ modified|when }}{% endif %}</p>{% endif %}
-  {% if record %}
-  <div class="o-groups">
-    {% for section, fields in record.sections if fields %}{{ field_group(section, fields) }}{% endfor %}
-    {% for tab in record.tabs if tab.fields is defined and tab.fields %}{{ field_group(tab.title, tab.fields) }}{% endfor %}
-  </div>
-
-  {% endif %}
-
-  {% set tables = (record.tabs if record else [])|rejectattr("fields", "defined")|list %}
-  {% set pages = [] %}
-  {% for tab in tables %}{% set _ = pages.append(("t" ~ loop.index, tab.title, tab.rows|length)) %}{% endfor %}
-  {% if emails %}{% set _ = pages.append(("emails", "Emails", emails|length)) %}{% endif %}
-  {% if pages %}
-  {% call(key) notebook(pages) %}
-    {% if key == "emails" %}{{ emails_rows(emails) }}
-    {% else %}{% set tab = tables[key[1:]|int - 1] %}
-    {% if tab.rows %}
-    <div class="table-scroll">
-    <table class="data">
-      <thead><tr>{% for c in tab.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-      <tbody>
-      {% for row in tab.rows %}
-      {% set href = url_for(tab.link, entry_id=row.id) if tab.link else None %}
-      <tr {% if href %}data-href="{{ href }}"{% endif %}>
-        {% for cell in row.cells %}
-        {% if loop.first %}<td class="cell-main">{% if href %}<a class="primary" href="{{ href }}">{{ cell or "–" }}</a>{% else %}<span class="primary">{{ cell or "–" }}</span>{% endif %}</td>
-        {% else %}<td data-label="{{ tab.columns[loop.index0] }}">{{ cell }}</td>{% endif %}
-        {% endfor %}
-      </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    {% if record %}
+    {{ statusbar(record.steps) }}
+    {% for alert_kind, text in record.alerts %}
+    <div class="callout {{ alert_kind }}">{{ icon("alert") }}<span style="white-space:pre-line">{{ text }}</span></div>
+    {% endfor %}
+    <div class="o-sheet o-record rec-fields">
+      <div class="o-groups">
+        {% for section, fields in record.sections if fields %}{{ field_group(section, fields) }}{% endfor %}
+        {% for tab in record.tabs if tab.fields is defined and tab.fields %}{{ field_group(tab.title, tab.fields) }}{% endfor %}
+      </div>
     </div>
-    {% else %}
-    <p class="faint">None in Odoo.</p>
     {% endif %}
+
+    {% set tables = (record.tabs if record else [])|rejectattr("fields", "defined")|list %}
+    {% set pages = [] %}
+    {% if thread or emails %}{% set _ = pages.append(("conversation", "Conversation", thread|length)) %}{% endif %}
+    {% for tab in tables %}{% set _ = pages.append(("t" ~ loop.index, tab.title, tab.rows|length)) %}{% endfor %}
+    {% if pages %}
+    <div class="rec-body {{ 'no-aside' if not (thread or emails) }}">
+      <div class="rec-main">
+      {% call(key) notebook(pages) %}
+        {% if key == "conversation" %}{{ conversation(thread) }}
+        {% else %}{% set tab = tables[key[1:]|int - 1] %}
+        {% if tab.rows %}
+        <div class="table-scroll">
+        <table class="data">
+          <thead><tr>{% for c in tab.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>
+          {% for trow in tab.rows %}
+          {% set href = url_for(tab.link, entry_id=trow.id) if tab.link else None %}
+          <tr {% if href %}data-href="{{ href }}"{% endif %}>
+            {% for cell in trow.cells %}
+            {% if loop.first %}<td class="cell-main">{% if href %}<a class="primary" href="{{ href }}">{{ cell or "–" }}</a>{% else %}<span class="primary">{{ cell or "–" }}</span>{% endif %}</td>
+            {% else %}<td data-label="{{ tab.columns[loop.index0] }}">{{ cell }}</td>{% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% else %}
+        <p class="faint">None in Odoo.</p>
+        {% endif %}
+        {% endif %}
+      {% endcall %}
+      </div>
+      {% if thread or emails %}{{ attachments(files) }}{% endif %}
+    </div>
     {% endif %}
-  {% endcall %}
-  {% endif %}
+  </div>
+  </section>
 </div>
 {% endblock %}

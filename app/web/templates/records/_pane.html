@@ -1,0 +1,55 @@
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import pager_nav %}
+{# The list beside every booking, scraped bill and customs page: records (not emails), the ones that need
+   a person first. Kept in place while a record opens beside it (data-list-key). #}
+{% set sections = {"bookings": ("Bookings", "web.booking_list", "Booking no., route, factory"),
+                   "bills": ("Scraped bills", "web.scraped_bills", "Bill no., vendor, amount"),
+                   "customs": ("Customs", "web.customs_batches", "Batch name")} %}
+{% set label, list_endpoint, hint = sections[kind] %}
+{% set needs = items|selectattr("attention")|list %}
+{% set rest = items|rejectattr("attention")|list %}
+{% macro item_row(it) -%}
+<li data-key="{{ it.id }}">
+  <a class="mail-row rec-row" href="{{ it.href }}" {% if it.current %}aria-current="true"{% endif %}>
+    <span class="rec-top"><b class="rec-title num">{{ it.title }}</b>
+      {% if it.when %}<span class="rec-when">{{ it.when|when(short=True) }}</span>{% endif %}</span>
+    {% if it.sub %}<span class="rec-sub">{{ it.sub }}</span>{% endif %}
+    <span class="rec-meta">
+      {% if it.status %}<span class="tag {{ it.status[0] }}">{{ it.status[1] }}</span>{% endif %}
+      {% if it.emails %}<span class="rec-count">{{ icon("mail") }}{{ it.emails }}</span>{% endif %}
+    </span>
+  </a>
+</li>
+{%- endmacro %}
+<section class="pane pane-list" aria-label="{{ label }}" data-list-key="{{ kind }}">
+  <div class="pane-head">
+    <div class="pane-title">
+      <h1>{{ label }}</h1>
+      <a class="btn ghost sm" href="{{ url_for(list_endpoint, view='table') }}" data-full title="Every column, with Group By">Table view</a>
+    </div>
+    <nav class="seg" aria-label="Records">
+      {% for key, (name, endpoint, _h) in sections.items() %}
+      <a href="{{ url_for(endpoint) }}" {% if key == kind %}aria-current="true"{% endif %}>{{ name }}</a>
+      {% endfor %}
+    </nav>
+    <div class="search">{{ icon("search") }}<input type="search" placeholder="Filter: {{ hint }}" aria-label="Filter the list" data-filter="#rec-list"></div>
+  </div>
+  {% if pane_error %}<div class="callout warn pane-callout">{{ icon("alert") }}<span>Odoo could not be read: {{ pane_error }}</span></div>{% endif %}
+  <ul class="mail-list rec-list" id="rec-list" data-prefetch>
+    {% if needs or waiting %}
+    <li class="rec-heading list-group">Needs you</li>
+    {% for it in needs %}{{ item_row(it) }}{% endfor %}
+    {% for state in ("review", "failed") if waiting.get(state) %}
+    <li class="list-group"><a class="rec-row rec-emails" href="{{ url_for('web.messages', state=state, groupby='mailbox') }}">
+      <span class="rec-top"><b class="rec-title">{{ "Emails to review" if state == "review" else "Failed emails" }}</b>
+        <span class="tag {{ state }}">{{ waiting[state] }}</span></span>
+      <span class="rec-sub">{{ "Read, but a person has to check them" if state == "review" else "Could not be processed: open one to see why" }}</span></a></li>
+    {% endfor %}
+    {% if rest %}<li class="rec-heading list-group">Recent</li>{% endif %}
+    {% endif %}
+    {% for it in rest %}{{ item_row(it) }}{% endfor %}
+    {% if not items and not pane_error %}<li class="list-empty list-group">Nothing here yet. Records appear once the service has written one to Odoo.</li>{% endif %}
+  </ul>
+  <div class="table-foot" data-filter-empty hidden>Nothing on this page matches the filter.</div>
+  {% if pane_pager and pane_pager.turns %}<div class="pane-foot">{{ pager_nav(pane_pager) }}</div>{% endif %}
+</section>

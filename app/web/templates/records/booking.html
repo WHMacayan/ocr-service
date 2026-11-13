@@ -1,91 +1,120 @@
 {% extends "layout/base.html" %}
 {% from "layout/_icons.html" import icon %}
-{% from "layout/_ui.html" import control_panel, field_group, group_title, notebook, emails_rows, statusbar with context %}
+{% from "layout/_ui.html" import field_group, group_title, notebook, statusbar with context %}
+{% from "records/_conversation.html" import conversation, attachments with context %}
+{% set split = true %}
 {% block content %}
 {% set number = (odoo_row or {}).get("booking_number") or (written.get("booking_number") or {}).get("value") or "#" ~ booking_id %}
-{% call control_panel(number, crumbs=[("Bookings", url_for('web.booking_list'))], badges=[] if steps else [("", state_label)]) %}
-  <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
-  <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
-{% endcall %}
+<div class="split split-wide has-detail">
+  {% include "records/_pane.html" %}
+  <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
+  <div class="detail rec-detail">
+    <a class="back-link" href="{{ url_for('web.booking_list') }}">{{ icon("back") }} Bookings</a>
 
-{{ statusbar(steps) }}
-{% if error %}
-<div class="callout warn">{{ icon("alert") }}<span>Odoo could not be read, so only the service's side is shown: {{ error }}</span></div>
-{% elif not odoo_row %}
-<div class="callout bad">{{ icon("alert") }}<span>This booking is no longer in Odoo: it was deleted there.</span></div>
-{% elif not written %}
-<div class="callout warn">{{ icon("alert") }}<span>The emails below were processed before the service kept its own record of what it wrote, so only Odoo's side is shown. Press <b>Process again</b> on an email to record it.</span></div>
-{% elif differs %}
-<div class="callout warn">{{ icon("alert") }}<span>{{ differs }} field{{ "s" if differs != 1 }} in Odoo differ{{ "s" if differs == 1 }} from what the service wrote: someone changed {{ "them" if differs != 1 else "it" }} in Odoo, or a later email did. They are marked below.</span></div>
-{% else %}
-<div class="callout ok">{{ icon("check") }}<span>Odoo holds exactly what the service wrote.</span></div>
-{% endif %}
+    <header class="rec-head">
+      <div class="rec-head-main">
+        <span class="eyebrow">Booking</span>
+        <h2 id="detail-title" class="num" tabindex="-1">{{ number }}</h2>
+        {% if times[0] %}<span class="faint">In the OCR service since {{ times[0]|when(short=True) }}{% if times[1] and times[1] != times[0] %} · last change {{ times[1]|when(short=True) }}{% endif %}</span>{% endif %}
+      </div>
+      <div class="actions">
+        <a class="btn secondary" href="{{ request.path }}">{{ icon("refresh") }} Refresh</a>
+        <a class="btn" href="{{ odoo_link }}" target="_blank" rel="noopener noreferrer">{{ icon("external") }} Open in Odoo</a>
+      </div>
+    </header>
 
-<div class="o-sheet o-record">
-  {% if times[0] %}<p class="faint" style="margin:0 0 12px">In the OCR service: created {{ times[0]|when }}{% if times[1] and times[1] != times[0] %} · last modified {{ times[1]|when }}{% endif %}</p>{% endif %}
-  {% if odoo_row and (odoo_row.missing_fields or odoo_row.open_conflict_count or odoo_row.has_uncertain_match) %}
-  <div class="o-groups">
-    {{ field_group("Needs attention",
-                   ([("Odoo is still waiting on", odoo_row.missing_fields)] if odoo_row.missing_fields else [])
-                   + ([("Open conflicts", odoo_row.open_conflict_count)] if odoo_row.open_conflict_count else [])
-                   + ([("Uncertain match", "A party was matched by name only: check it")] if odoo_row.has_uncertain_match else [])) }}
-  </div>
-  {% endif %}
-
-  {% for title, rows in sections if rows %}
-  <section class="o-group o-wide">
-    {{ group_title(title) }}
-    <div class="table-scroll">
-    <table class="data compare">
-      <thead><tr><th>Field</th><th>Odoo now</th><th>Service wrote</th></tr></thead>
-      <tbody>
-      {% for r in rows %}
-      <tr class="{{ r.state }}">
-        <td class="cell-main"><span class="primary">{{ r.label }}</span></td>
-        <td data-label="Odoo now">{% if r.odoo is none %}<span class="nothing">Not read</span>{% else %}{{ r.odoo or "–" }}
-          {% if r.odoo_source and r.odoo_source != r.service_source %}<span class="sub src" title="{{ r.odoo_source }}">from {{ r.odoo_source }}</span>{% endif %}{% endif %}</td>
-        <td data-label="Service wrote">
-          {% if r.state == "not_written" %}<span class="nothing">–</span>
-          {% else %}
-            <span class="cmp-value">{% if r.state == "same" %}{{ icon("check") }}{% else %}{{ icon("alert") }}{% endif %}{{ r.service_shown or "–" }}</span>
-            <a class="sub src" href="{{ url_for('web.message', message_id=r.message_id) }}" title="{{ r.service_source }}">from {{ r.service_source }}</a>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </section>
-  {% endfor %}
-
-  {% set child_titles = {"containers": ("Containers", "b2b.ocr.booking.container", ["container_no", "container_type", "quantity", "state"]),
-                         "bls": ("Bills of lading", "b2b.ocr.booking.bl", ["bl_number", "bl_type", "confirmed"]),
-                         "invoices": ("Factory invoices", "b2b.ocr.booking.invoice", ["invoice_number", "invoice_date", "amount", "currency_id"]),
-                         "conflicts": ("Conflicts", "b2b.ocr.booking.conflict", ["field_label", "existing_value", "new_value", "state"]),
-                         "changes": ("Container changes", "b2b.ocr.booking.container.change", ["new_container_lines", "state"])} %}
-  {% set pages = [] %}
-  {% for kind, (title, model, cols) in child_titles.items() if children.get(kind) %}{% set _ = pages.append((kind, title, children[kind]|length)) %}{% endfor %}
-  {% set _ = pages.append(("emails", "Emails", emails|length)) %}
-  {% call(kind) notebook(pages) %}
-    {% if kind == "emails" %}{{ emails_rows(emails) }}
-    {% else %}{% set title, model, cols = child_titles[kind] %}
-    <div class="table-scroll">
-    <table class="data">
-      <thead><tr>{% for c in cols %}<th>{{ c.replace("_id", "").replace("_", " ")|capitalize }}</th>{% endfor %}<th>From</th></tr></thead>
-      <tbody>
-      {% for row in children[kind] %}
-      {% set made = made_by_service.get((model, row.id)) %}
-      <tr>
-        {% for c in cols %}<td {% if loop.first %}class="cell-main"{% else %}data-label="{{ c.replace('_id', '').replace('_', ' ')|capitalize }}"{% endif %}>{% if loop.first %}<span class="primary">{{ row[c ~ "_shown"] or "–" }}</span>{% else %}{{ row[c ~ "_shown"] }}{% endif %}</td>{% endfor %}
-        <td data-label="From">{% if made %}<a href="{{ url_for('web.message', message_id=made.message_id) }}">{{ made.filename or "Email text" }}</a>
-          {% else %}<span class="sub">{{ row.source_shown or "Added in Odoo" }}</span>{% endif %}</td>
-      </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    </div>
+    {{ statusbar(steps) }}
+    {% if error %}
+    <div class="callout warn">{{ icon("alert") }}<span>Odoo could not be read, so only the service's side is shown: {{ error }}</span></div>
+    {% elif not odoo_row %}
+    <div class="callout bad">{{ icon("alert") }}<span>This booking is no longer in Odoo: it was deleted there.</span></div>
+    {% elif not written %}
+    <div class="callout warn">{{ icon("alert") }}<span>The emails below were processed before the service kept its own record of what it wrote, so only Odoo's side is shown. Press <b>Process again</b> on an email to record it.</span></div>
+    {% elif differs %}
+    <div class="callout warn">{{ icon("alert") }}<span>{{ differs }} field{{ "s" if differs != 1 }} in Odoo differ{{ "s" if differs == 1 }} from what the service wrote: someone changed {{ "them" if differs != 1 else "it" }} in Odoo, or a later email did. See <b>Fields vs Odoo</b>.</span></div>
+    {% else %}
+    <div class="callout ok">{{ icon("check") }}<span>Odoo holds exactly what the service wrote.</span></div>
     {% endif %}
-  {% endcall %}
+
+    {% if row %}
+    <dl class="facts-strip">
+      <div><dt>Odoo state</dt><dd>{{ row.state_shown or state_label or "–" }}</dd></div>
+      <div><dt>Route</dt><dd>{{ row.port_of_loading_shown or "?" }} → {{ row.port_of_discharge_shown or "?" }}</dd></div>
+      <div><dt>ETD</dt><dd class="num">{{ row.etd_shown or "–" }}</dd></div>
+      <div><dt>ETA</dt><dd class="num">{{ row.eta_shown or "–" }}</dd></div>
+      <div><dt>Factory</dt><dd>{{ row.factory_id_shown or "–" }}</dd></div>
+      <div><dt>Forwarder</dt><dd>{{ row.forwarder_id_shown or "–" }}</dd></div>
+    </dl>
+    {% endif %}
+
+    {% if odoo_row and (odoo_row.missing_fields or odoo_row.open_conflict_count or odoo_row.has_uncertain_match) %}
+    <div class="callout warn attention-box">{{ icon("alert") }}<span>
+      {% if odoo_row.missing_fields %}<b>Odoo is still waiting on:</b> {{ odoo_row.missing_fields }}<br>{% endif %}
+      {% if odoo_row.open_conflict_count %}<b>Open conflicts:</b> {{ odoo_row.open_conflict_count }}<br>{% endif %}
+      {% if odoo_row.has_uncertain_match %}<b>Uncertain match:</b> a party was matched by name only: check it{% endif %}</span></div>
+    {% endif %}
+
+    <div class="rec-body">
+      <div class="rec-main">
+      {% set child_titles = {"containers": ("Containers", "b2b.ocr.booking.container", ["container_no", "container_type", "quantity", "state"]),
+                             "bls": ("Bills of lading", "b2b.ocr.booking.bl", ["bl_number", "bl_type", "confirmed"]),
+                             "invoices": ("Factory invoices", "b2b.ocr.booking.invoice", ["invoice_number", "invoice_date", "amount", "currency_id"]),
+                             "conflicts": ("Conflicts", "b2b.ocr.booking.conflict", ["field_label", "existing_value", "new_value", "state"]),
+                             "changes": ("Container changes", "b2b.ocr.booking.container.change", ["new_container_lines", "state"])} %}
+      {% set pages = [("conversation", "Conversation", thread|length)] %}
+      {% if sections|selectattr(1)|list %}{% set _ = pages.append(("fields", "Fields vs Odoo", differs or none)) %}{% endif %}
+      {% for kind_, (title, model, cols) in child_titles.items() if children.get(kind_) %}{% set _ = pages.append((kind_, title, children[kind_]|length)) %}{% endfor %}
+      {% call(tab) notebook(pages) %}
+        {% if tab == "conversation" %}{{ conversation(thread) }}
+        {% elif tab == "fields" %}
+          {% for title, rows in sections if rows %}
+          <section class="o-group o-wide">
+            {{ group_title(title) }}
+            <div class="table-scroll">
+            <table class="data compare">
+              <thead><tr><th>Field</th><th>Odoo now</th><th>Service wrote</th></tr></thead>
+              <tbody>
+              {% for r in rows %}
+              <tr class="{{ r.state }}">
+                <td class="cell-main"><span class="primary">{{ r.label }}</span></td>
+                <td data-label="Odoo now">{% if r.odoo is none %}<span class="nothing">Not read</span>{% else %}{{ r.odoo or "–" }}
+                  {% if r.odoo_source and r.odoo_source != r.service_source %}<span class="sub src" title="{{ r.odoo_source }}">from {{ r.odoo_source }}</span>{% endif %}{% endif %}</td>
+                <td data-label="Service wrote">
+                  {% if r.state == "not_written" %}<span class="nothing">–</span>
+                  {% else %}
+                    <span class="cmp-value">{% if r.state == "same" %}{{ icon("check") }}{% else %}{{ icon("alert") }}{% endif %}{{ r.service_shown or "–" }}</span>
+                    <a class="sub src" href="{{ url_for('web.message', message_id=r.message_id) }}" title="{{ r.service_source }}">from {{ r.service_source }}</a>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </section>
+          {% endfor %}
+        {% else %}{% set title, model, cols = child_titles[tab] %}
+        <div class="table-scroll">
+        <table class="data">
+          <thead><tr>{% for c in cols %}<th>{{ c.replace("_id", "").replace("_", " ")|capitalize }}</th>{% endfor %}<th>From</th></tr></thead>
+          <tbody>
+          {% for crow in children[tab] %}
+          {% set made = made_by_service.get((model, crow.id)) %}
+          <tr>
+            {% for c in cols %}<td {% if loop.first %}class="cell-main"{% else %}data-label="{{ c.replace('_id', '').replace('_', ' ')|capitalize }}"{% endif %}>{% if loop.first %}<span class="primary">{{ crow[c ~ "_shown"] or "–" }}</span>{% else %}{{ crow[c ~ "_shown"] }}{% endif %}</td>{% endfor %}
+            <td data-label="From">{% if made %}<a href="{{ url_for('web.message', message_id=made.message_id) }}">{{ made.filename or "Email text" }}</a>
+              {% else %}<span class="sub">{{ crow.source_shown or "Added in Odoo" }}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% endif %}
+      {% endcall %}
+      </div>
+      {{ attachments(files) }}
+    </div>
+  </div>
+  </section>
 </div>
 {% endblock %}

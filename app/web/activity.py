@@ -1,5 +1,7 @@
 """The activity log page."""
 
+from datetime import date, datetime, timedelta, timezone
+
 from flask import g, render_template, request
 
 from . import bp
@@ -21,10 +23,74 @@ def actor_label(actor):
 GROUP_LABELS = {"kind": lambda k: ACTIVITY_LABELS.get(k, k), "actor": actor_label, "level": str.capitalize}
 
 
+PURPOSE_LABELS = {"freight_booking": "Bookings", "bill_matching": "Scraped bills", "customs_entry": "Customs",
+                  "freight_payables": "Freight payables"}
+DAYS_SHOWN = 7
+
+
+def runs(entries):
+    """The day's entries, newest first, with the service's routine work folded: back-to-back info entries of the
+    worker become one block {entries, emails, writes, first, last}; anything else stays one entry."""
+    blocks = []
+    for a in entries:
+        routine = a["actor"] == "worker" and a["level"] == "info"
+        if routine and blocks and isinstance(blocks[-1], dict):
+            blocks[-1]["entries"].append(a)
+        elif routine:
+            blocks.append({"entries": [a]})
+        else:
+            blocks.append(a)
+    for b in blocks:
+        if isinstance(b, dict):
+            b["emails"] = sum(1 for a in b["entries"] if a["kind"] == "processing")
+            b["writes"] = sum(1 for a in b["entries"] if a["kind"] == "odoo")
+            b["last"], b["first"] = b["entries"][0]["at"], b["entries"][-1]["at"]
+    return blocks
+
+
+def digest():
+    """Activity as a check-up: each mailbox now, the last day's problems, and a summary per day with the
+    chosen day's entries (?day=, the newest by default)."""
+    mailboxes = g.db.execute(
+        "SELECT id, name, purpose, active, auto_sync, status, last_sync, last_error, "
+        "CASE WHEN auto_sync AND last_sync IS NOT NULL THEN datetime(last_sync, '+' || sync_interval || ' minutes') END "
+        "AS next_sync FROM mailbox ORDER BY active DESC, name").fetchall()
+    attention = g.db.execute("SELECT * FROM activity WHERE level IN ('error', 'warning') AND at >= datetime('now', '-1 day') "
+                             "ORDER BY id DESC LIMIT 30").fetchall()
+    offset = max(request.args.get("days", 0, type=int), 0)
+    days = [r[0] for r in g.db.execute("SELECT DISTINCT date(at) FROM activity ORDER BY 1 DESC LIMIT ? OFFSET ?",
+                                       (DAYS_SHOWN + 1, offset))]
+    older = len(days) > DAYS_SHOWN
+    days = days[:DAYS_SHOWN]
+    summary = {}
+    if days:
+        marks = ", ".join("?" * len(days))
+        for day, kind, level, count in g.db.execute(
+                f"SELECT date(at), kind, level, COUNT(*) FROM activity WHERE date(at) IN ({marks}) "
+                f"GROUP BY 1, 2, 3", days):
+            s = summary.setdefault(day, {"processing": 0, "odoo": 0, "settings": 0, "security": 0, "problems": 0, "total": 0})
+            s[kind] = s.get(kind, 0) + count
+            s["total"] += count
+            if level in ("error", "warning"):
+                s["problems"] += count
+    today = datetime.now(timezone.utc).date()  # shortcut: days are UTC days, as stored; a viewer far from UTC sees evening entries on the next day
+    names = {today.isoformat(): "Today", (today - timedelta(days=1)).isoformat(): "Yesterday"}
+    day_labels = {d: names.get(d) or date.fromisoformat(d).strftime("%a %d %b %Y") for d in days}
+    opened = request.args.get("day") if request.args.get("day") in days else (days[0] if days else None)
+    blocks = runs(g.db.execute("SELECT * FROM activity WHERE date(at) = ? ORDER BY id DESC LIMIT 2000",
+                               (opened,)).fetchall()) if opened else []
+    return render_template("activity/digest.html", title="Activity", mailboxes=mailboxes, attention=attention,
+                           days=days, day_labels=day_labels, summary=summary, opened=opened, blocks=blocks, older=older, offset=offset,
+                           newer=max(offset - DAYS_SHOWN, 0) if offset else None, purposes=PURPOSE_LABELS,
+                           labels=ACTIVITY_LABELS, actor_label=actor_label, keep_days=store.get_setting(g.db, "activity_days"))
+
+
 @bp.route("/activity")
 def activity():
     kind = request.args.get("kind")
     query = (request.args.get("q") or "").strip()
+    if not (kind or query or request.args.get("groupby") or request.args.get("view") == "log"):
+        return digest()
     where, args = [], []
     if kind in ACTIVITY_LABELS:
         where.append("kind = ?")

@@ -1,0 +1,55 @@
+<style>
+  .m { font: 13.5px/1.5 system-ui, "Segoe UI", sans-serif; color: #1c1c22; background: #f6f6f8; border-radius: 12px; padding: 20px; max-width: 900px; }
+  .m .row { display: flex; gap: 10px; }
+  .m .box { background: #fff; border: 1px solid #e6e6eb; border-radius: 10px; padding: 12px 14px; }
+  .m .muted { color: #74747f; font-size: 12.5px; }
+  .m .bad { color: #b91c1c; } .m .ok { color: #047857; }
+  .m .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .m .pill { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; }
+  .m .line { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid #efeff3; }
+  .m .alert { border-left: 3px solid #dc2626; }
+  .m .sec { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: #74747f; margin: 18px 0 8px; }
+  .m .new { display: inline-block; font-size: 12px; color: #4338ca; background: #eef0ff; border-radius: 99px; padding: 3px 12px; }
+  .m h1 { font-size: 20px; margin: 0 0 2px; }
+  .m .fold { color: #4e4e5a; }
+</style>
+
+<h2>Activity: A + C together</h2>
+<p class="subtitle">Health and problems on top (from A); history below as one card per day (from C), with routine service work folded into one line per run (from A). Sample data.</p>
+
+<div class="m">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div><h1>Activity</h1><div class="muted">Is everything running, and did anything need you?</div></div>
+    <input class="mock-input" placeholder="Search the history…" style="width:240px">
+  </div>
+
+  <div class="sec">Right now</div>
+  <div class="row">
+    <div class="box" style="flex:1"><span class="dot" style="background:#10b981"></span><b>Bookings mailbox</b><div class="muted">Last read 3 min ago · next in 12 min</div></div>
+    <div class="box" style="flex:1"><span class="dot" style="background:#10b981"></span><b>Bills mailbox</b><div class="muted">Last read 5 min ago · next in 10 min</div></div>
+    <div class="box" style="flex:1"><span class="dot" style="background:#ef4444"></span><b>Customs mailbox</b><div class="muted bad">Failed 12 min ago · sign-in expired</div></div>
+  </div>
+
+  <div class="sec">Needs attention · last 24 hours</div>
+  <div class="box alert">
+    <div class="line" style="border-top:0;padding-top:0"><span><span class="pill" style="background:#fef2f2;color:#b91c1c">Error</span> Could not read mailbox customs@… — sign-in expired <a href="#" style="color:#4338ca">Reconnect →</a></span><span class="muted">10:18</span></div>
+    <div class="line"><span><span class="pill" style="background:#fef2f2;color:#b91c1c">Error</span> Invoice INV-88213: the AI did not answer in time <a href="#" style="color:#4338ca">Open email →</a></span><span class="muted">09:50</span></div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div class="sec">History</div><span class="new">↑ 5 new entries · show</span>
+  </div>
+  <div class="box" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b>Today</b><span class="pill" style="background:#fef2f2;color:#b91c1c">2 problems</span></div>
+    <div class="muted" style="margin:2px 0 6px">128 emails read · 302 Odoo writes · 1 setting changed · 2 sign-ins</div>
+    <div class="line fold"><span>▸ Service: 14 emails processed, 31 Odoo writes</span><span class="muted">10:30 – 10:34</span></div>
+    <div class="line"><span>Admin changed Settings: <b>Model</b></span><span class="muted">10:12</span></div>
+    <div class="line fold"><span>▸ Service: 9 emails processed, 18 Odoo writes</span><span class="muted">10:00 – 10:02</span></div>
+    <div class="line"><span>Admin signed in</span><span class="muted">08:41</span></div>
+    <div class="line"><span class="muted">▸ Show 24 earlier entries today</span></div>
+  </div>
+  <div class="box">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b>Yesterday</b><span class="pill" style="background:#ecfdf5;color:#047857">All good</span></div>
+    <div class="muted" style="margin-top:2px">211 emails read · 540 Odoo writes · ▸ open</div>
+  </div>
+</div>

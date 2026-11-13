@@ -1,9 +1,10 @@
 """Bookings: the service's record of each booking set against what Odoo holds now."""
 
-from flask import abort, g, render_template
+from flask import abort, g, render_template, request, url_for
 
 from . import booking_compare, bp
 from .base import _odoo_or_error, reference_url
+from .conversation import conversation, pane_context
 from .ui import group_by, group_ids, group_list, group_rows, pager
 from ..core import store
 
@@ -90,12 +91,43 @@ def grouped_bookings(odoo, every, groupby):
     return groups, error or opened.get("error")
 
 
+def booking_item(row, keep):
+    """A booking as the list beside every booking page shows it."""
+    check_ = row["check"]
+    differs = len(row["differs"])
+    status = {"Differs": ("review", f"{differs} field{'s' if differs != 1 else ''} differ{'s' if differs == 1 else ''}"),
+              "Not in Odoo": ("failed", "Not in Odoo"), "Matches": ("ok", "Matches Odoo"),
+              "Not recorded": ("", "Not recorded")}.get(check_)
+    route = (f"{row['port_of_loading_shown'] or '?'} → {row['port_of_discharge_shown'] or '?'}"
+             if row["port_of_loading_shown"] or row["port_of_discharge_shown"] else row["factory_id_shown"])
+    return {"id": row["id"], "href": url_for("web.booking", booking_id=row["id"], **keep), "title": row["label"],
+            "sub": route, "emails": row["emails"], "when": row["modified"], "status": status,
+            "attention": check_ in ("Differs", "Not in Odoo")}
+
+
+def booking_pane(odoo, current=None):
+    """The list beside every booking page: (items, page, error, the current booking's row)."""
+    every = sorted(booking_compare.booking_ids(g.db), reverse=True)
+    page = pager(len(every))
+    rows, error = booking_rows(odoo, every[page["offset"]:page["offset"] + page["limit"]])
+    row = next((r for r in rows if r["id"] == current), None)
+    if current and not row:
+        found, error = booking_rows(odoo, [current])
+        row = found[0] if found else None
+    keep = {"offset": page["offset"]} if page["offset"] else {}
+    return [booking_item(r, keep) for r in rows], page, error, row
+
+
 @bp.route("/bookings")
 def booking_list():
     every = sorted(booking_compare.booking_ids(g.db), reverse=True)
     odoo, error = _odoo_or_error()
     options = {k: label for k, (label, _field) in BOOKING_GROUPS.items()}
     groupby = group_by(options)
+    if not groupby and request.args.get("view") != "table":
+        items, page, pane_error, _row = booking_pane(odoo)
+        return render_template("records/workspace.html", title="Bookings", kind="bookings",
+                               **pane_context(items, page, error or pane_error, "freight_booking"))
     page, rows = None, []
     if groupby:
         groups, group_error = grouped_bookings(odoo, every, groupby)
@@ -127,8 +159,12 @@ def booking(booking_id):
     current = (odoo_row or {}).get("state")
     steps = [(label, value == current) for value, label in (info.get("state") or {}).get("selection") or []]
     odoo_url = reference_url()
+    items, page, pane_error, row = booking_pane(odoo, booking_id)
+    thread, files = conversation(g.db, feeding, booking_compare.BOOKING, booking_id)
     return render_template(
         "records/booking.html", title=f"Booking {(odoo_row or {}).get('booking_number') or booking_id}", booking_id=booking_id,
+        kind="bookings", row=row, thread=thread, files=files,
+        **pane_context(items, page, pane_error, "freight_booking", booking_id),
         odoo_row=odoo_row, info=info, sections=sections, written=written, children=children, emails=feeding,
         made_by_service=booking_compare.created_children(g.db, booking_id), error=error, steps=steps,
         state_label=booking_compare.shown((odoo_row or {}).get("state"), info.get("state")),

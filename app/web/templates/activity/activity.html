@@ -9,12 +9,13 @@
 
 {% from "layout/_ui.html" import control_panel, group_body %}
 {{ control_panel("Activity", pager=pager, group_by=group_options,
-                 search={"value": query, "placeholder": "Search the activity", "keep": {"kind": kind, "groupby": groupby}},
+                 search={"value": query, "placeholder": "Search the activity", "keep": {"kind": kind, "groupby": groupby, "view": "log"}},
                  intro="Who changed what, every sign-in, what the service processed and every record it wrote to Odoo. Kept for "
                        ~ (keep_days or "?") ~ " days.") }}
 
+<nav class="seg log-switch" aria-label="View"><a href="{{ url_for('web.activity') }}">Overview</a><a href="{{ url_for('web.activity', view='log') }}" aria-current="true">Full log</a></nav>
 <nav class="tabs" aria-label="Filter by type">
-  <a href="{{ url_for('web.activity', q=query or None, groupby=groupby) }}" {% if not kind %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
+  <a href="{{ url_for('web.activity', view='log', q=query or None, groupby=groupby) }}" {% if not kind %}aria-current="true"{% endif %}>All <span class="n">{{ total }}</span></a>
   {% for k, label in labels.items() %}
   <a href="{{ url_for('web.activity', kind=k, q=query or None, groupby=groupby) }}" {% if kind == k %}aria-current="true"{% endif %}>
     {{ icon(kind_icons[k]) }} {{ label }} <span class="n">{{ counts.get(k, 0) }}</span></a>

@@ -1,0 +1,110 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% block content %}
+{# Activity as a check-up: is everything running, did anything need you, and a calm summary per day.
+   Only the two top parts refresh by themselves; the history changes when you ask for it. #}
+<div class="page digest">
+  <div class="page-head">
+    <div>
+      <h1>Activity</h1>
+      <p>Is everything running, and did anything need you? Kept for {{ keep_days or "?" }} days.</p>
+    </div>
+    <div class="actions">
+      <nav class="seg" aria-label="View"><a href="{{ url_for('web.activity') }}" aria-current="true">Overview</a><a href="{{ url_for('web.activity', view='log') }}">Full log</a></nav>
+      <form class="search" method="get" action="{{ url_for('web.activity') }}" role="search">
+        <input type="hidden" name="view" value="log">{{ icon("search") }}<input type="search" name="q" placeholder="Search the history" aria-label="Search the history"></form>
+    </div>
+  </div>
+
+  <h2 class="section-label">Right now</h2>
+  <div class="health" id="health" data-live>
+    {% for b in mailboxes %}
+    {% set bad = b.status == "error" or b.last_error and b.status != "success" %}
+    <a class="health-card {{ 'bad' if bad else ('off' if not b.active else 'ok') }}" href="{{ url_for('web.record', key='mailboxes', record_id=b.id) }}">
+      <span class="health-top"><span class="dot"></span><b class="clip-1">{{ b.name }}</b></span>
+      <span class="health-purpose">{{ purposes.get(b.purpose, b.purpose) }}</span>
+      {% if not b.active %}<span class="health-line">Switched off</span>
+      {% elif bad %}<span class="health-line bad-text clip-1" title="{{ b.last_error }}">{{ b.last_error or "Last read failed" }}</span>
+      {% else %}<span class="health-line">{% if b.last_sync %}Read {{ b.last_sync|when(short=True) }}{% else %}Not read yet{% endif %}{% if b.next_sync %} · next {{ b.next_sync|when(short=True) }}{% endif %}</span>{% endif %}
+    </a>
+    {% else %}
+    <div class="health-card off"><span class="health-line">No mailbox yet. <a href="{{ url_for('web.record', key='mailboxes') }}">Add one</a></span></div>
+    {% endfor %}
+  </div>
+
+  <h2 class="section-label">Needs attention <span>last 24 hours</span></h2>
+  <div class="card attention" id="attention" data-live>
+    {% if attention %}
+    <ul class="att-feed">
+      {% for a in attention %}
+      <li>
+        <span class="tag {{ 'failed' if a.level == 'error' else 'review' }}">{{ a.level|capitalize }}</span>
+        <span class="att-feed-main">
+          {% if a.link %}<a class="primary" href="{{ a.link }}" {% if a.link.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ a.summary }}</a>{% else %}<span class="primary">{{ a.summary }}</span>{% endif %}
+          {% if a.detail %}<details class="detail-fold" id="attn-{{ a.id }}"><summary>Details</summary><pre class="block">{{ a.detail }}</pre></details>{% endif %}
+        </span>
+        <span class="num faint">{{ a.at|when(short=True) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="all-good">{{ icon("check") }} Nothing went wrong in the last 24 hours.</p>
+    {% endif %}
+  </div>
+
+  <div class="section-row">
+    <h2 class="section-label">History</h2>
+    <a class="btn ghost sm" href="{{ request.full_path }}">{{ icon("refresh") }} Refresh</a>
+  </div>
+  {% for day in days %}
+  {% set s = summary[day] %}
+  <section class="card day {{ 'open' if day == opened }}">
+    <a class="day-head" href="{{ url_for('web.activity', day=day, days=offset or None) }}" {% if day == opened %}aria-current="true"{% endif %}>
+      <span class="day-title"><b>{{ day_labels[day] }}</b>
+        {% if s.problems %}<span class="tag failed">{{ s.problems }} problem{{ "s" if s.problems != 1 }}</span>{% else %}<span class="tag ok">All good</span>{% endif %}</span>
+      <span class="day-sum">{{ s.processing }} email{{ "s" if s.processing != 1 }} processed · {{ s.odoo }} Odoo write{{ "s" if s.odoo != 1 }}{% if s.settings %} · {{ s.settings }} setting change{{ "s" if s.settings != 1 }}{% endif %}{% if s.security %} · {{ s.security }} sign-in and security{% endif %}</span>
+    </a>
+    {% if day == opened %}
+    <ul class="day-list">
+      {% for b in blocks %}
+      {% if b.entries is defined %}
+      <li class="run">
+        <details id="run-{{ b.entries[0].id }}">
+          <summary><span class="run-label">{{ icon("chevron") }} Service: {{ b.emails }} email{{ "s" if b.emails != 1 }} processed, {{ b.writes }} Odoo write{{ "s" if b.writes != 1 }}{% if b.entries|length > b.emails + b.writes %}, {{ b.entries|length - b.emails - b.writes }} other{% endif %}</span>
+            <span class="num faint">{{ b.first|when(time=True) }}{% if b.first != b.last %} – {{ b.last|when(time=True) }}{% endif %}</span></summary>
+          <ul class="run-entries">
+            {% for a in b.entries %}
+            <li><span class="kind-tag">{{ labels.get(a.kind, a.kind) }}</span>
+              {% if a.link %}<a href="{{ a.link }}" {% if a.link.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ a.summary }}</a>{% else %}<span>{{ a.summary }}</span>{% endif %}
+              <span class="num faint">{{ a.at|when(time=True) }}</span></li>
+            {% endfor %}
+          </ul>
+        </details>
+      </li>
+      {% else %}
+      <li class="entry {{ b.level }}">
+        {% if b.level in ("error", "warning") %}<span class="tag {{ 'failed' if b.level == 'error' else 'review' }}">{{ b.level|capitalize }}</span>{% endif %}
+        <span class="entry-main">
+          {% if b.link %}<a class="primary" href="{{ b.link }}" {% if b.link.startswith('http') %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ b.summary }}</a>{% else %}<span class="primary">{{ b.summary }}</span>{% endif %}
+          <span class="faint"> · {{ actor_label(b.actor) }}</span>
+          {% if b.detail %}<details class="detail-fold" id="entry-{{ b.id }}"><summary>Details</summary><pre class="block">{{ b.detail }}</pre></details>{% endif %}
+        </span>
+        <span class="num faint">{{ b.at|when(time=True) }}</span>
+      </li>
+      {% endif %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% else %}
+  <div class="card empty"><div class="empty-icon">{{ icon("activity") }}</div><h2>No activity yet</h2>
+    <p>Setting changes, sign-ins, processing and Odoo writes appear here as they happen.</p></div>
+  {% endfor %}
+  {% if older or newer is not none %}
+  <div class="actions day-pager">
+    {% if newer is not none %}<a class="btn secondary sm" href="{{ url_for('web.activity', days=newer or None) }}">Newer days</a>{% endif %}
+    {% if older %}<a class="btn secondary sm" href="{{ url_for('web.activity', days=offset + days|length) }}">Older days</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

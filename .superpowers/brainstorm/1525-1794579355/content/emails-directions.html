@@ -1,0 +1,102 @@
+<style>
+  .m { font: 12.5px/1.45 system-ui, "Segoe UI", sans-serif; color: #1c1c22; background: #f6f6f8; border-radius: 12px; overflow: hidden; border: 1px solid #e6e6eb; }
+  .m .cols { display: flex; min-height: 330px; }
+  .m .col { background: #fff; border-right: 1px solid #ececf1; padding: 10px; }
+  .m .muted { color: #74747f; font-size: 11.5px; }
+  .m .pill { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 10.5px; font-weight: 600; }
+  .m .p-ok { background: #ecfdf5; color: #047857; } .m .p-bad { background: #fef2f2; color: #b91c1c; } .m .p-warn { background: #fffbeb; color: #b45309; }
+  .m .tag { display: inline-block; padding: 0 6px; border-radius: 5px; font-size: 10.5px; font-weight: 600; background: #eef0ff; color: #4338ca; }
+  .m .conv { padding: 8px; border-radius: 8px; margin-bottom: 4px; }
+  .m .conv.on { background: #eef0ff; }
+  .m .nav div { padding: 5px 8px; border-radius: 6px; color: #4e4e5a; }
+  .m .nav div.on { background: #eef0ff; color: #4338ca; font-weight: 600; }
+  .m .nav .h { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #9a9aa5; padding: 10px 8px 4px; }
+  .m .msg { background: #fff; border: 1px solid #e6e6eb; border-radius: 9px; padding: 8px 10px; margin-bottom: 8px; }
+  .m .file { display: inline-block; border: 1px solid #e6e6eb; border-radius: 6px; padding: 1px 6px; margin: 4px 4px 0 0; font-size: 11px; background: #fafafb; }
+  .m .wrote { font-size: 11px; color: #047857; margin-top: 4px; }
+  .m .search { border: 1px solid #dcdce3; border-radius: 8px; padding: 5px 8px; color: #8a8a96; background: #fff; margin-bottom: 8px; }
+  .m .rec { background: #fff; border: 1px solid #e6e6eb; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .m .kv { display: grid; grid-template-columns: auto auto auto auto; gap: 2px 14px; font-size: 11.5px; margin-top: 6px; }
+  .m .kv span:nth-child(odd) { color: #74747f; }
+</style>
+
+<h2>Emails as conversations: three layouts</h2>
+<p class="subtitle">In all three, the list shows conversations (not single emails), each labelled with its booking or bill. You can search by booking/bill number or just look at the newest. Sample data. Click the one that fits how you work.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Mail-client style: folders · conversations · thread</h3>
+      <p>Like Outlook. Left: Bookings / Scraped bills and a "Needs attention" view. Middle: conversations. Right: the whole thread oldest-first; under each message, its attachments and what it wrote to Odoo.</p>
+      <div class="m"><div class="cols">
+        <div class="col nav" style="width:120px;background:#fbfbfc">
+          <div class="h">Views</div><div>Needs attention <b class="pill p-bad">3</b></div><div>All</div>
+          <div class="h">Purpose</div><div class="on">Bookings</div><div>Scraped bills</div><div>Customs</div>
+        </div>
+        <div class="col" style="width:210px">
+          <div class="search">🔍 Booking or bill no., sender…</div>
+          <div class="conv on"><span class="tag">MAEU245119873</span> <span class="pill p-ok">Done</span><div><b>Booking confirmation 2x40HC</b></div><div class="muted">Maersk · 4 emails · 6 files · 2h</div></div>
+          <div class="conv"><span class="tag">SHA2401887</span> <span class="pill p-warn">Review</span><div><b>Pre-alert / ETD 14 Nov</b></div><div class="muted">Forwarder · 3 emails · 3 files · 3h</div></div>
+          <div class="conv"><span class="tag" style="background:#f1f1f4;color:#74747f">No booking yet</span><div><b>Arrival notice CMDU 7781203</b></div><div class="muted">CMA · 1 email · 1 file · 4h</div></div>
+        </div>
+        <div style="flex:1;padding:10px">
+          <b style="font-size:14px">MAEU245119873 · Booking confirmation 2x40HC</b><div class="muted" style="margin-bottom:8px">4 emails · imports@ · started 12 Nov</div>
+          <div class="msg"><b>Maersk</b> <span class="muted">12 Nov 09:14</span><div class="muted">Please find the booking confirmation attached…</div><span class="file">📄 booking_confirmation.pdf</span><div class="wrote">✓ Created booking MAEU245119873 in Odoo</div></div>
+          <div class="msg"><b>Forwarder</b> <span class="muted">13 Nov 11:02</span><div class="muted">Updated ETD, revised invoice attached…</div><span class="file">📄 invoice.pdf</span><span class="file">📊 packing_list.xlsx</span><div class="wrote">✓ Updated ETD, invoice lines on the booking</div></div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Record first: each booking or bill is the "folder"</h3>
+      <p>The list shows bookings and bills, each with its conversation folded inside. Opening one shows a short record summary on top (what's in Odoo), then the conversation that built it below. Best if you think "how is this booking going?" more than "what came in?".</p>
+      <div class="m"><div class="cols">
+        <div class="col" style="width:250px">
+          <div style="display:flex;gap:4px;margin-bottom:8px"><span class="pill" style="background:#17171c;color:#fff;padding:2px 9px">Bookings</span><span class="pill" style="background:#f1f1f4;color:#4e4e5a;padding:2px 9px">Scraped bills</span></div>
+          <div class="search">🔍 Booking or bill no.…</div>
+          <div class="conv on"><b>MAEU245119873</b> <span class="pill p-ok">Done</span><div class="muted">Shanghai → Manila · 4 emails · last 2h</div></div>
+          <div class="conv"><b>SHA2401887</b> <span class="pill p-warn">Review</span><div class="muted">Matched twice · 3 emails · last 3h</div></div>
+          <div class="conv"><b>Unmatched emails</b> <span class="pill p-bad">2</span><div class="muted">Not linked to a booking yet</div></div>
+        </div>
+        <div style="flex:1;padding:10px">
+          <div class="rec"><b style="font-size:14px">Booking MAEU245119873</b> <span class="pill p-ok">In Odoo</span>
+            <div class="kv"><span>Carrier</span><span>Maersk</span><span>ETD</span><span>14 Nov</span><span>Route</span><span>SHA → MNL</span><span>Containers</span><span>2 × 40HC</span></div></div>
+          <div class="muted" style="margin-bottom:6px;font-weight:600">CONVERSATION · 4 emails, 6 files</div>
+          <div class="msg"><b>Maersk</b> <span class="muted">12 Nov</span> <span class="file">📄 booking_confirmation.pdf</span><div class="wrote">✓ Created the booking</div></div>
+          <div class="msg"><b>Forwarder</b> <span class="muted">13 Nov</span> <span class="file">📄 invoice.pdf</span><div class="wrote">✓ Updated ETD, invoice lines</div></div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Two panes with a "what went to Odoo" side panel</h3>
+      <p>Tabs Bookings / Scraped bills over the conversation list. The open thread reads like a chat in the middle; a fixed panel on the right lists every attachment and the Odoo record it fed, so the "attachment → record" link is always visible.</p>
+      <div class="m"><div class="cols">
+        <div class="col" style="width:200px">
+          <div style="display:flex;gap:4px;margin-bottom:8px"><span class="pill" style="background:#17171c;color:#fff;padding:2px 9px">Bookings</span><span class="pill" style="background:#f1f1f4;color:#4e4e5a;padding:2px 9px">Bills</span></div>
+          <div class="search">🔍 Booking or bill no.…</div>
+          <div class="conv on"><span class="tag">MAEU245119873</span><div><b>Booking confirmation</b></div><div class="muted">4 emails · 2h</div></div>
+          <div class="conv"><span class="tag">SHA2401887</span> <span class="pill p-warn">Review</span><div><b>Pre-alert</b></div><div class="muted">3 emails · 3h</div></div>
+        </div>
+        <div style="flex:1;padding:10px;border-right:1px solid #ececf1">
+          <b style="font-size:14px">Booking confirmation 2x40HC</b>
+          <div class="msg" style="margin-top:8px"><b>Maersk</b> <span class="muted">12 Nov 09:14</span><div class="muted">Please find the booking confirmation attached…</div></div>
+          <div class="msg"><b>Forwarder</b> <span class="muted">13 Nov 11:02</span><div class="muted">Updated ETD, revised invoice attached…</div></div>
+        </div>
+        <div style="width:190px;padding:10px;background:#fbfbfc">
+          <div class="muted" style="font-weight:600;margin-bottom:6px">ATTACHMENTS → ODOO</div>
+          <div class="msg">📄 booking_confirmation.pdf<div class="wrote">→ Booking MAEU245119873 (created)</div></div>
+          <div class="msg">📄 invoice.pdf<div class="wrote">→ Same booking (updated)</div></div>
+          <div class="msg">📊 packing_list.xlsx<div class="muted">Read, nothing to write</div></div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+</div>

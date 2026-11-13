@@ -43,7 +43,8 @@ def test_booking_record_sets_what_the_service_wrote_against_odoo(client, db, mon
     signed_in(client)
 
     listing = client.get("/bookings").get_data(as_text=True)
-    assert "BK123" in listing and "1 differs" in listing
+    assert "BK123" in listing and "1 field differs" in listing      # the list beside every booking
+    assert "1 differs" in client.get("/bookings?view=table").get_data(as_text=True)
     grouped = client.get("/bookings?groupby=check").get_data(as_text=True)
     assert '<span class="clip">Differs</span><span class="n">1</span>' in grouped and 'aria-current="true">Check</a>' in grouped
     assert "BK123" not in grouped                                            # folded until opened

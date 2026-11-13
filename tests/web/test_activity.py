@@ -10,13 +10,13 @@ def test_activity_pages_like_odoo_and_takes_a_typed_range(client, db):
         db.executemany("INSERT INTO activity (kind, actor, summary) VALUES ('processing', 'worker', ?)",
                        [(f"Entry {n:03}",) for n in range(200)])
     total = db.execute("SELECT COUNT(*) FROM activity").fetchone()[0]
-    first = client.get("/activity").get_data(as_text=True)
+    first = client.get("/activity?view=log").get_data(as_text=True)
     assert 'value="1-80"' in first and f"/ {total}" in first
     assert "Entry 199" in first and "Entry 119" not in first
-    assert 'href="/activity?offset=80"' in first                        # next page
-    second = client.get("/activity?offset=80").get_data(as_text=True)
+    assert 'href="/activity?view=log&amp;offset=80"' in first                        # next page
+    second = client.get("/activity?view=log&offset=80").get_data(as_text=True)
     assert 'value="81-160"' in second and "Entry 119" in second and "Entry 199" not in second
-    typed = client.get("/activity?range=1-150").get_data(as_text=True)  # typed into the pager
+    typed = client.get("/activity?view=log&range=1-150").get_data(as_text=True)  # typed into the pager
     assert 'value="1-150"' in typed and "Entry 060" in typed
     filtered = client.get("/activity?q=Entry+00").get_data(as_text=True)
     assert 'value="1-10"' in filtered and "/ 10" in filtered and 'name="q" value="Entry 00"' in filtered
@@ -68,3 +68,20 @@ def test_activity_groups_every_entry_and_opens_a_group_as_odoo_does(client, db):
     assert "data-group-page" not in client.get("/activity?groupby=kind&group=security").get_data(as_text=True)
     assert 'href="/activity?kind=odoo&amp;groupby=kind"' in grouped         # the type tabs keep the grouping
     assert 'data-group=' not in client.get("/activity").get_data(as_text=True)
+
+
+def test_activity_overview_folds_routine_work_and_lifts_problems(client, db):
+    signed_in(client)
+    with db:
+        db.execute("INSERT INTO mailbox (name, status, last_error) VALUES ('customs@x.test', 'error', 'Sign-in expired')")
+        db.executemany("INSERT INTO activity (kind, level, actor, summary) VALUES (?, ?, ?, ?)", [
+            ("processing", "info", "worker", "Processed: first"), ("odoo", "info", "worker", "Wrote booking A"),
+            ("odoo", "info", "worker", "Wrote booking B"), ("settings", "info", "admin from 1.2.3.4", "Changed settings: Model"),
+            ("processing", "error", "worker", "Could not read mailbox customs@x.test"),
+            ("processing", "info", "worker", "Processed: second")])
+    page = client.get("/activity").get_data(as_text=True)
+    assert "Service: 1 email processed, 2 Odoo writes" in page          # the first run, folded
+    assert "Service: 1 email processed, 0 Odoo writes" in page          # after the error and the admin's change
+    assert "Changed settings: Model" in page and "Sign-in expired" in page
+    attention = page[page.index('id="attention"'):page.index("History")]
+    assert "Could not read mailbox customs@x.test" in attention and "Changed settings" not in attention

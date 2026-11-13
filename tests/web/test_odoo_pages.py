@@ -48,7 +48,8 @@ def test_scraped_bill_page_shows_the_form(client, db, odoo):  # noqa: F811
     signed_in(client)
 
     listing = client.get("/scraped-bills").get_data(as_text=True)
-    assert "TIMAC-260805" in listing and "NOT-OURS" not in listing and "from 1 email" in listing
+    assert "TIMAC-260805" in listing and "NOT-OURS" not in listing           # the list beside every bill
+    assert "from 1 email" in client.get("/scraped-bills?view=table").get_data(as_text=True)
 
     page = client.get(f"/scraped-bills/{bill}").get_data(as_text=True)
     for shown in ("ETERNAL MACHINE TOOL", "Vendor", "Invoice", "Match", "10,169.41",

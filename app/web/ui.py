@@ -11,10 +11,10 @@ from . import bp
 
 
 @bp.app_template_filter("when")
-def when(value, short=False):
+def when(value, short=False, time=False):
     """A stored UTC time, marked so the page script shows it in the viewer's time zone.
     Without the script it reads as UTC; UTC also stays in the tooltip. Short: the time
-    alone today, else the date, for lists."""
+    alone today, else the date, for lists. Time: the time of day alone, for entries listed under their day."""
     if not value:
         return ""
     try:
@@ -24,7 +24,7 @@ def when(value, short=False):
     if moment.tzinfo:
         moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
     utc = moment.strftime("%Y-%m-%d %H:%M:%S")
-    extra = " data-short" if short else ""
+    extra = " data-time" if time else (" data-short" if short else "")
     return Markup(f'<time datetime="{moment:%Y-%m-%dT%H:%M:%S}Z" title="{utc} UTC"{extra}>{utc} UTC</time>')
 
 

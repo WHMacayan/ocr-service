@@ -1,0 +1,110 @@
+<style>
+  .vs { display: flex; height: 300px; border-radius: 12px; overflow: hidden; font-size: 12.5px; line-height: 1.45; }
+  .vs .side { width: 120px; padding: 12px 10px; }
+  .vs .side .brand { font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+  .vs .side .brand i { width: 18px; height: 18px; border-radius: 5px; display: inline-block; }
+  .vs .side div.l { padding: 5px 8px; border-radius: 6px; margin-bottom: 2px; }
+  .vs .list { width: 175px; padding: 12px 10px; }
+  .vs .item { padding: 8px; border-radius: 8px; margin-bottom: 4px; }
+  .vs .main { flex: 1; padding: 14px; }
+  .vs .card { padding: 12px; border-radius: 10px; margin-bottom: 10px; }
+  .vs .kv { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin-top: 6px; font-size: 12px; }
+  .vs .pill { display: inline-block; padding: 0 8px; border-radius: 99px; font-size: 10.5px; font-weight: 600; }
+  .vs .file { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; margin-top: 5px; }
+  .vs .btn { display: inline-block; padding: 4px 10px; border-radius: 7px; font-weight: 600; font-size: 11.5px; }
+
+  /* 1: Odoo, refined */
+  .s1 { background: #F4F5F7; color: #1F2937; font-family: system-ui, "Segoe UI", sans-serif; }
+  .s1 .side { background: #fff; border-right: 1px solid #E3E5E8; }
+  .s1 .side .brand i { background: #714B67; }
+  .s1 .side div.on { background: #F1E9EF; color: #714B67; font-weight: 600; }
+  .s1 .list { background: #fff; border-right: 1px solid #E3E5E8; }
+  .s1 .item.on { background: #E6F2F3; box-shadow: inset 3px 0 0 #017E84; border-radius: 0 8px 8px 0; }
+  .s1 .card { background: #fff; border: 1px solid #E3E5E8; }
+  .s1 .muted { color: #6B7280; }
+  .s1 .pill { background: #E6F2F3; color: #017E84; }
+  .s1 .file { background: #F4F5F7; border: 1px solid #E3E5E8; }
+  .s1 .btn { background: #714B67; color: #fff; }
+  .s1 .wrote { color: #017E84; }
+
+  /* 2: Quiet monochrome */
+  .s2 { background: #FFFFFF; color: #0A0A0A; font-family: "Inter", system-ui, sans-serif; letter-spacing: -.005em; }
+  .s2 .side { background: #FAFAFA; border-right: 1px solid #EDEDED; }
+  .s2 .side .brand i { background: #0A0A0A; border-radius: 50%; }
+  .s2 .side div.l { color: #6B6B6B; }
+  .s2 .side div.on { background: #EFEFEF; color: #0A0A0A; font-weight: 600; }
+  .s2 .list { border-right: 1px solid #EDEDED; }
+  .s2 .item { border-radius: 6px; }
+  .s2 .item.on { background: #F4F4F4; }
+  .s2 .card { border: 1px solid #EDEDED; border-radius: 8px; }
+  .s2 .muted { color: #8A8A8A; }
+  .s2 .pill { background: transparent; border: 1px solid #D9D9D9; color: #3F3F3F; }
+  .s2 .pill::before { content: "●"; color: #16A34A; margin-right: 4px; font-size: 8px; vertical-align: 1px; }
+  .s2 .file { border: 1px solid #EDEDED; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }
+  .s2 .btn { background: #0A0A0A; color: #fff; border-radius: 6px; }
+  .s2 .num { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  .s2 .wrote { color: #3F3F3F; }
+
+  /* 3: Warm paper */
+  .s3 { background: #F7F4EE; color: #2B2722; font-family: system-ui, "Segoe UI", sans-serif; }
+  .s3 .side { background: #EFEAE1; }
+  .s3 .side .brand i { background: #2F6F62; border-radius: 6px; }
+  .s3 .side div.on { background: #FFFDF9; color: #2F6F62; font-weight: 600; box-shadow: 0 1px 2px rgba(60,40,20,.08); }
+  .s3 .list { background: #FBF9F5; border-right: 1px solid #E8E1D5; }
+  .s3 .item.on { background: #FFFFFF; box-shadow: 0 1px 3px rgba(60,40,20,.10); }
+  .s3 .card { background: #FFFFFF; box-shadow: 0 1px 3px rgba(60,40,20,.08); border-radius: 14px; }
+  .s3 .muted { color: #857B6E; }
+  .s3 .pill { background: #E3F0EC; color: #2F6F62; }
+  .s3 .file { background: #F7F4EE; }
+  .s3 .btn { background: #2F6F62; color: #fff; border-radius: 99px; }
+  .s3 h4 { font-family: Georgia, "Times New Roman", serif; font-weight: 600; font-size: 16px; }
+  .s3 .wrote { color: #2F6F62; }
+  .vs h4 { margin: 0; font-size: 15px; }
+</style>
+
+<h2>Which look feels right?</h2>
+<p class="subtitle">The same booking screen in three styles. Layout is identical; only the feel changes. None of them is the indigo-and-grey look you turned down.</p>
+
+<div class="options">
+  <div class="option" data-choice="odoo-refined" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>Odoo, refined</h3>
+      <p>Keeps the plum and teal you already liked, so it still sits next to Odoo naturally, but lighter, roomier and calmer than Odoo itself.</p>
+      <div class="vs s1">
+        <div class="side"><div class="brand"><i></i>OCR</div><div class="l on">Bookings</div><div class="l">Scraped bills</div><div class="l">Activity</div></div>
+        <div class="list"><div class="item on"><b>MAEU245119873</b><div class="muted">SHA → MNL · 4 emails</div></div><div class="item"><b>SHA2401887</b><div class="muted">2 fields differ</div></div></div>
+        <div class="main"><div class="card"><div style="display:flex;justify-content:space-between"><h4>Booking MAEU245119873</h4><span class="btn">Open in Odoo</span></div><span class="pill">Matches Odoo</span><div class="kv"><span class="muted">ETD</span><span>14 Nov 2026</span><span class="muted">Route</span><span>Shanghai → Manila</span></div></div>
+          <div class="card"><b>Maersk</b> <span class="muted">12 Nov 09:14</span><br><span class="file">booking_confirmation.pdf</span><div class="wrote">✓ Created this booking</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="monochrome" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>Quiet monochrome</h3>
+      <p>Black, white and hairline borders; colour only where something needs your eye (a status dot, an error). Very sleek and precise, numbers in a fixed-width font. The calmest of the three.</p>
+      <div class="vs s2">
+        <div class="side"><div class="brand"><i></i>OCR</div><div class="l on">Bookings</div><div class="l">Scraped bills</div><div class="l">Activity</div></div>
+        <div class="list"><div class="item on"><b class="num">MAEU245119873</b><div class="muted">SHA → MNL · 4 emails</div></div><div class="item"><b class="num">SHA2401887</b><div class="muted">2 fields differ</div></div></div>
+        <div class="main"><div class="card"><div style="display:flex;justify-content:space-between"><h4>Booking <span class="num" style="font-size:14px">MAEU245119873</span></h4><span class="btn">Open in Odoo</span></div><span class="pill">Matches Odoo</span><div class="kv"><span class="muted">ETD</span><span class="num">2026-11-14</span><span class="muted">Route</span><span>Shanghai → Manila</span></div></div>
+          <div class="card"><b>Maersk</b> <span class="muted num">12 Nov 09:14</span><br><span class="file">booking_confirmation.pdf</span><div class="wrote">✓ Created this booking</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="warm" onclick="toggleSelect(this)">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3>Warm paper</h3>
+      <p>Soft off-white like paper, a deep green accent, gentle shadows instead of borders, rounded and friendly. Easy on the eyes for long sessions; the least "software-looking".</p>
+      <div class="vs s3">
+        <div class="side"><div class="brand"><i></i>OCR</div><div class="l on">Bookings</div><div class="l">Scraped bills</div><div class="l">Activity</div></div>
+        <div class="list"><div class="item on"><b>MAEU245119873</b><div class="muted">SHA → MNL · 4 emails</div></div><div class="item"><b>SHA2401887</b><div class="muted">2 fields differ</div></div></div>
+        <div class="main"><div class="card"><div style="display:flex;justify-content:space-between"><h4>Booking MAEU245119873</h4><span class="btn">Open in Odoo</span></div><span class="pill">Matches Odoo</span><div class="kv"><span class="muted">ETD</span><span>14 Nov 2026</span><span class="muted">Route</span><span>Shanghai → Manila</span></div></div>
+          <div class="card"><b>Maersk</b> <span class="muted">12 Nov 09:14</span><br><span class="file">booking_confirmation.pdf</span><div class="wrote">✓ Created this booking</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>

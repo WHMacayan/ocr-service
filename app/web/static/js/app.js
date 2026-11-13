@@ -41,7 +41,9 @@ function init(root) {
   (root.closest?.("table.data") ? [root.closest("table.data")] : $$(root, "table.data")).forEach(restoreSort);
   $$(root, "[data-live][id]").forEach(el => served.set(el, el.outerHTML));
   $$(root, "time[datetime]").forEach(t => {
-    const shown = localTime(t.getAttribute("datetime"), t.hasAttribute("data-short"));
+    const shown = t.hasAttribute("data-time")
+      ? new Date(t.getAttribute("datetime")).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      : localTime(t.getAttribute("datetime"), t.hasAttribute("data-short"));
     if (shown) t.textContent = shown;
   });
   $$(root, ".toast").forEach(initToast);
