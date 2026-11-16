@@ -9,13 +9,15 @@ import re
 from datetime import date
 
 from . import ai
-from .text import (appears_in, booking_number_in_subject, date_appears_in, file_text, find_container_numbers,
+from .text import (appears_in, booking_number_in_subject, plausible_identifier, date_appears_in, file_text, find_container_numbers,
                    find_house_bl, find_master_bl, is_container_number, normalize_identifier, parse_month_date)
 
 FREIGHT_CLASSES = (
-    "booking_confirmation", "commercial_invoice", "packing_list", "mbl_hbl", "shipping_notice",
-    "freight_invoice", "customs_document", "delivery_document", "statement", "not_freight", "unknown")
-NOT_RELEVANT = ("statement", "not_freight", "unknown")
+    "booking_confirmation", "commercial_invoice", "packing_list", "certificate_of_origin", "mbl_hbl",
+    "shipping_notice", "freight_invoice", "customs_document", "delivery_document", "statement", "not_freight",
+    "unknown")
+# A certificate of origin quotes the goods' invoice number but is no invoice: it adds nothing to a booking.
+NOT_RELEVANT = ("certificate_of_origin", "statement", "not_freight", "unknown")
 # Only a commercial invoice becomes a scraped bill; the other types are read to be told apart from it.
 INVOICE_TYPES = ("commercial_invoice", "freight_invoice", "service_invoice", "shipping_notice", "other")
 _TYPE_NAMES = {"commercial_invoice": "commercial invoice", "freight_invoice": "freight invoice",
@@ -31,7 +33,8 @@ FREIGHT_SCHEMA = {
     "properties": {
         "doc_class": {"type": "string", "enum": list(FREIGHT_CLASSES)},
         **{name: _nullable("string") for name in (
-            "booking_number", "master_bl", "house_bl", "vessel", "voyage", "pre_carrier_vessel",
+            "booking_number", "master_bl", "house_bl", "bl_number", "shipment_reference", "rail_ramp", "vessel", "voyage",
+            "pre_carrier_vessel",
             "pre_carrier_voyage", "port_of_loading", "port_of_discharge", "etd", "eta", "forwarder_name",
             "factory_name", "currency")},
         "containers": {"type": "array", "items": {"type": "string"}},
@@ -98,8 +101,12 @@ def checked(parsed, text):
     """Identifiers and dates the document does not print are dropped: model
     output is a reading, not a fact."""
     values = {key: value for key, value in parsed.items() if value not in (None, "", [])}
-    for key in ("booking_number", "master_bl", "house_bl", "invoice_number", "vendor_vat"):
+    for key in ("booking_number", "master_bl", "house_bl", "bl_number", "shipment_reference", "invoice_number",
+                "vendor_vat"):
         if key in values and not appears_in(text, values[key]):
+            values.pop(key)
+    for key in ("booking_number", "master_bl", "house_bl", "bl_number"):
+        if key in values and not plausible_identifier(values[key]):
             values.pop(key)
     for key in ("containers", "invoices", "po_numbers"):
         if key in values:

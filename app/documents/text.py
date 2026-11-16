@@ -45,6 +45,23 @@ def normalize_identifier(value):
     return re.sub(r"[^A-Z0-9]", "", text.upper())
 
 
+_MONTH_RE = re.compile(r"-(?:JAN|FEB|MAR|APR|MAY|JUNE?|JULY?|AUG|SEPT?|OCT|NOV|DEC)-", re.I)
+
+
+def plausible_identifier(value):
+    """Whether a value read as a booking or B/L number can be one. Read wrongly in the freight mailbox
+    (Nov 2026), each tying dozens of shipments together: a forwarder's NVOCC licence (IT1841NVO on every
+    Tianshi FCR), a phone number, an email, a carrier code alone (HDMU), a customer reference
+    (LAX19-SEPT-31ARS), a vessel and voyage (KOTA RAJIN V.0361S). Real numbers have 4 digits at least
+    (Hapag HLCUBKK2608ARQMO has 4)."""
+    text = str(value or "").strip()
+    if not text or "@" in text or text.startswith("+") or _MONTH_RE.search(text):
+        return False
+    if len(re.findall(r"\d", text)) < 4 or normalize_identifier(text).endswith("NVO"):
+        return False
+    return len(re.findall(r"(?<![A-Z0-9])[A-Z]{2,}(?![A-Z0-9.])", text.upper())) < 2
+
+
 def split_list(value):
     return [part.strip() for part in (value or "").split(",") if part.strip()]
 

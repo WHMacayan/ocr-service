@@ -90,7 +90,15 @@ O2M = {
 M2O = {"partner_id", "company_id", "booking_id", "freight_currency_id", "forwarder_id", "factory_id",
        "freight_product_id", "mapping_freight_product_id", "purchase_order_id", "warehouse_id", "bill_id",
        "purchase_id", "commercial_partner_id", "currency_id", "move_id", "purchase_order_id", "order_id",
-       "product_id", "picking_type_id"}
+       "product_id", "picking_type_id", "invoice_id"}
+
+# Fields of b2b_ocr_documents from Nov 2026 (factory-invoice-first), present even before a row uses them.
+# A test of an Odoo not yet upgraded sets FakeOdoo.extra_fields = {}.
+EXTRA_FIELDS = {
+    "b2b.ocr.booking.container": {"invoice_id"},
+    "b2b.ocr.booking.invoice": {"factory_name"},
+    "b2b.ocr.booking": {"shipment_reference", "booking_number", "rail_ramp", "rail_ramp_source"},
+}
 
 
 DEFAULTS = {
@@ -109,6 +117,8 @@ class FakeOdoo:
         self.tables = {}
         self.posts = []
         self._next = 100
+        self.extra_fields = {k: set(v) for k, v in EXTRA_FIELDS.items()}
+        self.required = set()  # (model, field) the fields_get answer marks required
 
     def rows(self, model):
         return self.tables.setdefault(model, {})
@@ -138,6 +148,8 @@ class FakeOdoo:
             if op == "!=" and v != target:
                 return True
             if op == "in" and v in target:
+                return True
+            if op == "not in" and v not in target:
                 return True
             if op == "ilike" and v and str(target).lower() in str(v).lower():
                 return True
@@ -195,9 +207,11 @@ class FakeOdoo:
         if method == "fields_get":
             names = {f for row in self.rows(model).values() for f in row} | {"master_bl_source", "vessel_source",
                                                                              "etd_source", "eta_source"}
+            names |= self.extra_fields.get(model, set())
             if model == "purchase.order":
                 names |= {"master_bl", "house_bl", "container_number"}
-            return {n: {"string": n.replace("_", " ").title()} for n in names}
+            return {n: {"string": n.replace("_", " ").title(), "required": (model, n) in self.required}
+                    for n in names}
         if method == "unlink":
             for i in args[0]:
                 self.rows(model).pop(i, None)
