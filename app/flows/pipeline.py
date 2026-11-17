@@ -196,6 +196,7 @@ class _Run:
                 "WHERE f.message_id = ? AND COALESCE(t.state, 'new') IN ('new', 'waiting') ORDER BY f.id",
                 (self.connection_id, message["id"])).fetchall():
             if message["purpose"] == "customs_entry":
+                self.db.commit()  # never hold the database while a scanned PDF is read (Tesseract)
                 with _source(self.odoo, message["id"], file["id"]):
                     self._file(file, *self.customs.take(file, message["received"]))
                 continue

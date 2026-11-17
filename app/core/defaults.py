@@ -4,8 +4,9 @@ FREIGHT_PROMPT = """You read one shipping document for an ocean freight import t
 
 doc_class (exactly one):
 - booking_confirmation: a carrier or forwarder confirming a booking, including updates
-- commercial_invoice: the overseas factory's invoice for the shipped goods
+- commercial_invoice: the overseas factory's invoice for the shipped goods; also a file holding the invoice and its packing list together
 - packing_list: the factory's carton and packing detail, no amounts due
+- certificate_of_origin: a certificate of origin (COO, C/O, Form A, Form E, COFO), even when it quotes the goods' invoice number
 - mbl_hbl: master or house bill of lading, sea waybill, forwarder's cargo receipt
 - shipping_notice: arrival notice, pre-alert, shipment advice
 - freight_invoice: an invoice or debit note billing transport (ocean freight, trucking, drayage)
@@ -23,11 +24,15 @@ Fields:
 - vessel / voyage: the ocean (trunk, mother) vessel and its voyage; on a bill of lading, the vessel printed under Vessel/Voyage. Never a port, terminal, carrier or charge name
 - pre_carrier_vessel / pre_carrier_voyage: the feeder or pre-carriage vessel to the transshipment port, only when the document prints one separately (Pre-carrier, Pre-carriage by, Feeder, 1st vessel)
 - port_of_loading / port_of_discharge: the seaports of the ocean leg; never an inland destination; never a transshipment (T/S) port
+- rail_ramp: the inland rail ramp or place of delivery beyond the port of discharge, when the shipment continues inland (e.g. MEMPHIS RAMP, "Place of Delivery: DALLAS, TX"); null when delivery is at the seaport
 - etd: departure from the port of loading; eta: arrival at the port of discharge; YYYY-MM-DD. Read printed dates with the document's own order: 2026/11/03 is 3 November
 - master_bl on a house bill or forwarder's cargo receipt: only the number printed as the carrier's or ocean B/L; the document's own number is the house_bl
 - forwarder_name: the party in a field labelled Forwarder, otherwise the issuer of the document; never the customer, consignee, shipper or bill-to party
 - factory_name: the shipper, seller or exporter of the goods; never the consignee, importer or customer
-- invoices: the factory's commercial invoice numbers only
+- bl_number: a bill of lading number printed without saying master or house (e.g. "B/L#" on a factory invoice); null when the document says which
+- shipment_reference: the buyer's order or booking reference for the shipment, such as CC11155BALTIMORE6-JUNE-32 printed as ORDER NO. or PO#
+- invoices: the factory's commercial invoice numbers only; never the number of a certificate of origin, packing list or order
+- On a commercial invoice or packing list: SHIPPED PER S.S. (or Vessel) gives vessel and voyage; FROM and TO give port_of_loading and port_of_discharge; a packing-list page may print the booking number, ETD and ETA
 - freight_cost: total transport charges on a freight invoice; additional_charges: charges stated separately; currency: their ISO code
 
 Return only values printed on this document; null or an empty list when absent. Never guess. A value in the wrong field is worse than an empty one."""
@@ -39,7 +44,7 @@ document_type (exactly one):
 - freight_invoice: an invoice or debit note billing transport: ocean or air freight, trucking, drayage, delivery, handling
 - service_invoice: any other service invoice: customs, brokerage, duty, storage, inspection, insurance
 - shipping_notice: arrival notice, pre-alert, shipment advice, even when it lists charges or the goods' invoice numbers and value
-- other: statements, packing lists, bills of lading, booking confirmations, quotations, receipts, anything else
+- other: statements, packing lists, certificates of origin, bills of lading, booking confirmations, quotations, receipts, anything else
 Decide by what is charged. A commercial_invoice charges for the goods themselves: product lines with quantities and unit prices. An invoice whose charges are freight, handling, customs or other fees is a freight_invoice or service_invoice, even when it is titled just "Invoice" and describes the goods, the shipper, the PO or the shipper's invoice number. A forwarder, carrier or broker never issues a commercial_invoice.
 
 - document_name: what this document actually is, in 2 to 6 plain words, e.g. "commercial invoice", "ocean freight invoice", "trucking invoice", "customs brokerage invoice", "arrival notice", "customs entry summary (CBP 7501)", "ACH payment statement", "packing list", "bill of lading".
@@ -56,8 +61,8 @@ Decide by what is charged. A commercial_invoice charges for the goods themselves
 EARLIER_PROMPTS = {
     "invoice_prompt": {"6302e111dea481aa", "4502e6950b7a3818", "74a2b0fc8910a85b",
                        "c9d78c95bab7ad6e", "38cf731397d6934a",
-                       "f0ecefc3114f3f05"},
-    "freight_prompt": {"e33e906ba288143f"},
+                       "f0ecefc3114f3f05", "c2b7ef423fded560"},
+    "freight_prompt": {"e33e906ba288143f", "472b048be2c4ac0e", "58f9c136eeb12eee"},
 }
 
 # Seeded with INSERT OR IGNORE: a value changed on the settings page is kept.

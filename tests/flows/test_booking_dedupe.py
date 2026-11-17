@@ -40,17 +40,17 @@ def test_printed_factory_wins_over_a_shared_sender_domain():
                        partner_id=113820)
     morocco = mapping(role="factory", document_name="SENTURY TIRE MOROCCO", partner_id=113821)
     booker = make_booker(odoo, [thailand, morocco])
-    booker.take(doc("booking_confirmation", booking_number="BK1"))
+    booker.take(doc("booking_confirmation", booking_number="BK100001"))
 
-    booker.take(doc("commercial_invoice", "ci.pdf", sender="cherry@senturytire.com", booking_number="BK1",
+    booker.take(doc("commercial_invoice", "ci.pdf", sender="cherry@senturytire.com", booking_number="BK100001",
                     factory_name="SENTURY TIRE MOROCCO"))
     assert next(iter(odoo.rows("b2b.ocr.booking").values()))["factory_id"] == 113821
 
-    booker.take(doc("booking_confirmation", booking_number="BK2"))
-    booker.take(doc("commercial_invoice", "ci2.pdf", sender="vicky@senturytire.com", booking_number="BK2",
+    booker.take(doc("booking_confirmation", booking_number="BK100002"))
+    booker.take(doc("commercial_invoice", "ci2.pdf", sender="vicky@senturytire.com", booking_number="BK100002",
                     factory_name="SENTURY TIRE (THAILAND) CO., LTD"))
     rows = {r["booking_number"]: r for r in odoo.rows("b2b.ocr.booking").values()}
-    assert rows["BK2"]["factory_id"] == 113820
+    assert rows["BK100002"]["factory_id"] == 113820
 
 
 def test_longest_printed_name_wins():

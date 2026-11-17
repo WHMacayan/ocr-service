@@ -15,4 +15,7 @@ RUN mkdir /data && chown ocr /data
 USER ocr
 
 ENV PYTHONUNBUFFERED=1
+# One thread per Tesseract: the service already scans several files at once (ai_parallel), and
+# Tesseract's default of one thread per core makes those scans spin against each other for hours.
+ENV OMP_THREAD_LIMIT=1
 CMD ["flask", "--app", "app", "worker"]

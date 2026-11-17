@@ -49,7 +49,7 @@ services:
     restart: unless-stopped
     logging: *logging
 
-  customs-worker:
+  customs-worker: 
     build: .
     volumes:
       - ocr-data:/data
