@@ -80,3 +80,9 @@ def test_sender_domain_filter_keeps_only_those_domains():
     box = {"sender_domains": "tlius.com, example.org"}
     assert filter_reason(box, message(1, **{"from": {"emailAddress": {"address": "owen@TLIUS.com"}}})) is None
     assert filter_reason(box, message(2)) == "sender domain"
+
+
+def test_a_3461_is_recognised_but_not_sent_to_the_audit(tmp_path):
+    from app.flows import customs
+    assert customs.form_of("CBP FORM 3461 ENTRY/IMMEDIATE DELIVERY 1651-0024") == "3461"
+    assert "3461" not in customs.SENT_FORMS and "7501" in customs.SENT_FORMS

@@ -21,10 +21,10 @@ def test_newest_message_text_drops_quoted_history():
 
 
 def test_checked_keeps_only_printed_values():
-    text = "Booking No: ABC123456 Container MSCU1234567 ETD 2026-10-18"
-    values = checked({"booking_number": "ABC123456", "master_bl": "HLCU999999", "containers": ["MSCU1234567",
-                      "TGHU7654321"], "etd": "2026-10-18", "eta": "2026-11-20", "vessel": None}, text)
-    assert values == {"booking_number": "ABC123456", "containers": ["MSCU1234567"], "etd": "2026-10-18"}
+    text = "Booking No: ABC123456 Container MSCU1234566 ETD 2026-10-18"
+    values = checked({"booking_number": "ABC123456", "master_bl": "HLCU999999", "containers": ["MSCU1234566",
+                      "TGHU7654320"], "etd": "2026-10-18", "eta": "2026-11-20", "vessel": None}, text)
+    assert values == {"booking_number": "ABC123456", "containers": ["MSCU1234566"], "etd": "2026-10-18"}
 
 
 def test_email_values_from_subject_format():
@@ -104,13 +104,13 @@ def test_only_a_commercial_invoice_adds_a_factory_invoice():
 def test_new_containers_become_one_change_for_a_person():
     odoo = FakeOdoo()
     booker = make_booker(odoo)
-    booker.take(doc("booking_confirmation", booking_number="AB123456", containers=["MSCU1234567"]))
-    later = doc("packing_list", "pl.pdf", booking_number="AB123456", containers=["TGHU7654321"])
+    booker.take(doc("booking_confirmation", booking_number="AB123456", containers=["MSCU1234566"]))
+    later = doc("packing_list", "pl.pdf", booking_number="AB123456", containers=["TGHU7654320"])
     booker.take(later)
     booker.take(later)
     assert len(odoo.rows("b2b.ocr.booking.container")) == 1
     changes = list(odoo.rows("b2b.ocr.booking.container.change").values())
-    assert len(changes) == 1 and "TGHU7654321" in changes[0]["new_container_lines"]
+    assert len(changes) == 1 and "TGHU7654320" in changes[0]["new_container_lines"]
 
 
 def test_forwarder_from_mapping_and_own_company_ignored():
@@ -134,7 +134,7 @@ def test_email_creates_booking_only_when_format_confirms_from_mapped_forwarder()
     assert state == "done" and odoo.rows("b2b.ocr.booking")[booking_id]["has_uncertain_match"] is True
 
 
-def test_freight_po_is_suggested_never_linked():
+def test_the_teams_freight_po_is_linked_as_already_existing():
     odoo = FakeOdoo()
     booker = make_booker(odoo, [mapping(sender_domain="fwd.com", partner_id=7, freight_product_id=9)])
     po = odoo.add("purchase.order", name="P00042", partner_id=7, master_bl="HLCU123456789", house_bl=False,
@@ -144,10 +144,24 @@ def test_freight_po_is_suggested_never_linked():
     odoo.add("product.product", is_storable=False)
     odoo.rows("product.product")[9] = {"is_storable": False}
     _s, _n, booking_id = booker.take(doc("booking_confirmation", booking_number="AB123456",
-                                         master_bl="HLCU123456789", containers=["MSCU1234567"]))
+                                         master_bl="HLCU123456789", containers=["MSCU1234566"]))
     row = odoo.rows("b2b.ocr.booking")[booking_id]
-    assert row["history_purchase_order_id"] == po
-    assert not row.get("purchase_order_id")
+    assert row["purchase_order_id"] == po and row["purchase_order_matched"]          # PO Matched
+    assert any("PO already existing" in post[2].get("body", "") for post in odoo.posts)
+
+
+def test_no_po_is_linked_when_the_forwarder_differs():
+    odoo = FakeOdoo()
+    booker = make_booker(odoo, [mapping(sender_domain="fwd.com", partner_id=7, freight_product_id=9)])
+    po = odoo.add("purchase.order", name="P00043", partner_id=99, master_bl="HLCU123456789", house_bl=False,
+                  state="purchase", company_id=1, invoice_ids=[], picking_type_id=False, partner_ref=False,
+                  date_order="2026-10-02 00:00:00")
+    odoo.add("purchase.order.line", order_id=po, product_id=9, product_qty=1)
+    odoo.rows("product.product")[9] = {"is_storable": False}
+    _s, _n, booking_id = booker.take(doc("booking_confirmation", booking_number="AB123456", forwarder_name="FWD LINES",
+                                         master_bl="HLCU123456789", containers=["MSCU1234566"]))
+    row = odoo.rows("b2b.ocr.booking")[booking_id]
+    assert row["forwarder_id"] == 7 and not row.get("purchase_order_id")      # PO P00043 is another vendor's
 
 
 # ── scraped bills ────────────────────────────────────────────────────
@@ -330,3 +344,15 @@ def test_invoice_on_a_posted_bill_is_already_billed():
     row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
     assert row["state"] == "bill_confirmed" and row["bill_id"] == posted
     assert row["match_notes"] == "Already billed: BILL/2026/10/0763 carries this invoice number."
+
+
+def test_the_po_whose_vendor_reference_is_the_booking_number_is_linked():
+    odoo = FakeOdoo()
+    booker = make_booker(odoo, [mapping(sender_domain="fwd.com", partner_id=7, freight_product_id=9)])
+    po = odoo.add("purchase.order", name="P72945", partner_id=7, master_bl=False, house_bl=False, partner_ref="94659872-2",
+                  state="purchase", company_id=1, invoice_ids=[], picking_type_id=False, date_order="2026-10-19 00:00:00")
+    odoo.add("purchase.order.line", order_id=po, product_id=9, product_qty=1)
+    odoo.rows("product.product")[9] = {"is_storable": False}
+    _s, _n, booking_id = booker.take(doc("booking_confirmation", booking_number="94659872", containers=["FANU1107915"]))
+    row = odoo.rows("b2b.ocr.booking")[booking_id]
+    assert row["purchase_order_id"] == po and row["purchase_order_matched"]

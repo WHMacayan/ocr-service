@@ -2,16 +2,21 @@
 
 Port of b2b_freight_ocr's booking rules. A value fills an empty field; a
 different value is kept as an open Conflict for a person; a field a person
-confirmed is never touched. Purchase history is written as suggestions only:
-linking or drafting the freight PO is a button in Odoo.
+confirmed is never touched. Purchase history is written as suggestions, except the
+team's own freight PO for the shipment, which is linked (PO Matched); drafting a PO
+is a button in Odoo.
 """
 
 import json
+import logging
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
 
-from ..documents.text import find_labelled_booking_number, normalize_identifier, parse_date, plausible_identifier
+from ..documents.text import (find_labelled_booking_number, normalize_identifier, parse_date, plausible_identifier,
+                              valid_container_number)
+
+_logger = logging.getLogger(__name__)
 
 BOOKING = "b2b.ocr.booking"
 CONTAINER = "b2b.ocr.booking.container"
@@ -89,7 +94,23 @@ def _words(text):
 # One port under two names. Sentury Morocco's invoices print TANGIER for the container port Tanger Med;
 # a bare UN/LOCODE stands for its port.
 _PORT_ALIASES = {"TANGIER": "TANGERMED", "TANGER": "TANGERMED", "TANGIERMED": "TANGERMED", "MAPTM": "TANGERMED",
-                 "USPEF": "EVERGLADES"}
+                 "USPEF": "EVERGLADES", "SAIGON": "HOCHIMINH"}
+# Neighbouring ports stay apart on purpose (Los Angeles / Long Beach, Ho Chi Minh City / Vung Tau): the terminal and
+# the trucking differ, so a document naming the other one is a disagreement for a person.
+# The factories' invoice numbers (Sentury F26AR10THA0693 / F26ARS09THA180, General Rubber GRKA-P-2026436 written
+# without dashes): read where a B/L goes, never a B/L.
+_INVOICE_NUMBER = re.compile(r"^(F\d{2}ARS?\d{2}[A-Z]{2,3}\d{3,4}|GRKA[A-Z]{0,2}\d{7})")
+# UN/LOCODEs printed alone where a port goes (an arrival notice's THLCH, USDAL): the city they stand for.
+_LOCODES = {"THLCH": "LAEMCHABANG", "THBKK": "BANGKOK", "VNSGN": "HOCHIMINH", "VNVUT": "VUNGTAU",
+            "VNCMT": "CAIMEP", "VNHPH": "HAIPHONG", "CNQDG": "QINGDAO", "CNTAO": "QINGDAO", "CNSHA": "SHANGHAI",
+            "CNNGB": "NINGBO", "CNYTN": "YANTIAN", "CNSHK": "SHEKOU", "KHKOS": "SIHANOUKVILLE", "MAPTM": "TANGERMED",
+            "USLAX": "LOSANGELES", "USLGB": "LONGBEACH", "USOAK": "OAKLAND", "USTIW": "TACOMA", "USSEA": "SEATTLE",
+            "USSAV": "SAVANNAH", "USCHS": "CHARLESTON", "USNYC": "NEWYORK", "USEWR": "NEWARK", "USORF": "NORFOLK",
+            "USBAL": "BALTIMORE", "USHOU": "HOUSTON", "USMOB": "MOBILE", "USTPA": "TAMPA", "USJAX": "JACKSONVILLE",
+            "USMIA": "MIAMI", "USPEF": "EVERGLADES", "USHNL": "HONOLULU", "PRSJU": "SANJUAN", "USDAL": "DALLAS",
+            "USMEM": "MEMPHIS", "USATL": "ATLANTA", "USCHI": "CHICAGO", "USCLE": "CLEVELAND", "USDET": "DETROIT",
+            "USCMH": "COLUMBUS", "USCVG": "CINCINNATI", "USKCK": "KANSASCITY", "USSTL": "STLOUIS", "USELP": "ELPASO",
+            "USDEN": "DENVER"}
 
 
 # Inland rail ramps in the US and Canada: never a seaport. A document printing one where the port of
@@ -140,6 +161,29 @@ OWN_NAMES = ("KATANARACING", "WTDUS", "WHOLESALETIREDISTRIBUTORS")
 CUSTOMS_BROKERS = ("TRIUMPHLINK",)
 
 
+# North American seaports, where the company's cargo is discharged (by port_key).
+DESTINATION_PORTS = {"LOSANGELES", "LONGBEACH", "OAKLAND", "TACOMA", "SEATTLE", "PORTLAND", "SAVANNAH", "CHARLESTON",
+                     "NORFOLK", "NEWYORK", "NEWARK", "ELIZABETH", "BAYONNE", "BALTIMORE", "PHILADELPHIA", "WILMINGTON",
+                     "BOSTON", "HOUSTON", "GALVESTON", "MOBILE", "NEWORLEANS", "TAMPA", "MIAMI", "JACKSONVILLE",
+                     "EVERGLADES", "HONOLULU", "ANCHORAGE", "SANJUAN", "SANDIEGO", "PORTHUENEME", "GULFPORT", "CHESTER",
+                     "CAMDEN", "VANCOUVER", "PRINCERUPERT", "MONTREAL", "HALIFAX", "SAINTJOHN"}
+_NORTH_AMERICA = re.compile(r"\bU\.?S\.?A?\b|UNITED STATES|\bCANADA\b|PUERTO RICO|,\s*(?:" + "|".join(sorted(_US_STATES))
+                            + r"|CA|BC|PR)\b")
+
+
+def is_destination_port(text):
+    """A port in the US, Canada or Puerto Rico: SAVANNAH, GA, USA and USLAX LOS ANGELES are; SINGAPORE,
+    YANTIAN and MAPTM TANGER MED are not."""
+    upper = (text or "").upper()
+    if _NORTH_AMERICA.search(upper) or re.match(r"\s*(?:US|CA|PR)[A-Z]{3}\b", upper):
+        return True
+    return port_key(text) in DESTINATION_PORTS
+
+
+# Customs brokers' papers (DO invoices, entry fees): never the ocean freight.
+CUSTOMS_BROKER_DOMAINS = ("tlius.com",)
+
+
 # A terminal inside a port (APM TERMINALS PIER 400 is in Los Angeles): it never disputes the port.
 _TERMINAL = re.compile(r"TERMINAL|\bPIER\b|\bBERTH\b|\bWHARF\b", re.I)
 # A container number (ONEU0312535) is never a bill of lading number.
@@ -150,25 +194,41 @@ def is_container_number(text):
     return bool(_CONTAINER_NUMBER.fullmatch(normalize_identifier(text) or ""))
 
 
-def swapped_date(a, b):
-    """Whether two ISO dates are one date with its day and month read the other way round (2026-10-08, 2026-08-10)."""
+def swapped_date(a, b, days=10):
+    """Whether date ``b`` is a date near ``a`` with its day and month read the other way round: 2026-08-10 for
+    8 October beside 7 October (Tianshi's day-first cargo receipts moved an ETD two months back, Nov 2026)."""
     try:
         x, y = date.fromisoformat(str(a)[:10]), date.fromisoformat(str(b)[:10])
-        return x != y and x.replace(month=x.day, day=x.month) == y
+        if x == y or y.day > 12:
+            return False
+        return abs((y.replace(month=y.day, day=y.month) - x).days) <= days
     except (TypeError, ValueError):
         return False
+
+
+def min_sea_days(port_of_loading):
+    """The fewest days an ETA can follow the ETD. Tanger Med to the US sails in 7 to 13 days (the Booking Report's
+    plans, Jun-Oct 2026); from Asia nothing arrives under 9. A nearer date is a stop on the way (Yantian, Singapore,
+    Shanghai on a carrier's first leg: 24315154 had 5 days, 17 Nov 2026). At home (an inland leg) only the order counts."""
+    if not port_of_loading or is_destination_port(port_of_loading):
+        return 1
+    if port_key(port_of_loading) == "TANGERMED" or "MOROCCO" in str(port_of_loading).upper():
+        return 7
+    return 9
 
 
 def port_key(text):
     """A port as its city: 'USCHS CHARLESTON, SC' and 'CHARLESTON, SC, US' are CHARLESTON; HAI PHONG is HAIPHONG;
     'USPEF PORT' is EVERGLADES; TANGIER is TANGERMED."""
     words = _words(text)
+    if len(words) == 1 and words[0] in _LOCODES:
+        return _LOCODES[words[0]]  # a UN/LOCODE printed alone (THLCH, USDAL)
     code = ""
     if len(words) > 1 and re.fullmatch(r"[A-Z]{2}[A-Z0-9]{3}", words[0]):
         code, words = words[0], words[1:]  # the UN/LOCODE printed before the name
     key = "".join(w for w in words if w not in _PLACES and w not in _US_STATES and len(w) > 1
                   and w not in ("PORT", "CITY", "OF"))
-    return _PORT_ALIASES.get(key) or key or _PORT_ALIASES.get(code, code)
+    return _PORT_ALIASES.get(key) or key or _PORT_ALIASES.get(code) or _LOCODES.get(code, code)
 
 
 def party_key(text):
@@ -202,6 +262,48 @@ def same_value(name, old, new, mappings=()):
 
 # Characters a reading mixes up: one of these pairs is a misreading, two other digits are another number.
 _LOOK_ALIKE = [set(pair) for pair in ("0O", "0D", "0Q", "1I", "1L", "5S", "8B", "2Z", "6G", "UV")]
+
+
+def copy_po_details(odoo, booking_id, order_id):
+    """The team's freight PO knows the shipment: its MBL, HBL and containers fill the booking's empty ones, and an
+    Ocean Freight PO makes the mode ocean (booking 35254926: linked to P68349, yet no B/L and mode Unknown,
+    17 Nov 2026). Returns what was copied."""
+    po = odoo.call("purchase.order", "read", [order_id], ["name", "master_bl", "house_bl", "container_number"])[0]
+    booking = odoo.call(BOOKING, "read", [booking_id], ["master_bl", "house_bl", "freight_mode", "invoice_ids"])[0]
+    source = f"team PO {po['name']}"
+    labels = odoo.call(BOOKING, "fields_get", attributes=["type"])
+    updates, copied = {}, []
+    for name in ("master_bl", "house_bl"):
+        first = re.split(r"[,;/&\n]", po.get(name) or "")[0]
+        value = normalize_identifier(first)
+        if value and plausible_identifier(value) and not booking[name]:
+            updates[name] = value
+            if f"{name}_source" in labels:
+                updates[f"{name}_source"] = source
+            copied.append(f"{'MBL' if name == 'master_bl' else 'HBL'} {value}")
+    if booking["freight_mode"] in (False, "unknown"):
+        updates["freight_mode"] = "ocean"
+        copied.append("mode Ocean")
+    if updates:
+        odoo.write(BOOKING, [booking_id], updates)
+    numbers = [c for c in dict.fromkeys(normalize_identifier(c) for c in re.split(r"[,;/\s]+", po.get("container_number") or ""))
+               if valid_container_number(c)]
+    if numbers and not odoo.call(CONTAINER, "search_count", [("booking_id", "=", booking_id), ("state", "=", "active")]):
+        invoice = booking["invoice_ids"][0] if len(booking["invoice_ids"]) == 1 else False
+        for number in numbers:
+            values = {"booking_id": booking_id, "container_no": number, "source": source}
+            if invoice:
+                values["invoice_id"] = invoice
+            odoo.create(CONTAINER, values)
+        copied.append(f"containers {', '.join(numbers)}")
+    return copied
+
+
+def reference_number(text):
+    """The booking number a PO's Vendor Reference holds: 31978034-2 (one PO of a split) is 31978034; the
+    carrier code is dropped, as on the booking."""
+    first = re.split(r"[\s/]|-(?=\d{1,2}$)", (text or "").strip())[0] if text else ""
+    return _SCAC.sub("", normalize_identifier(first))
 
 
 def same_identifier(a, b):
@@ -270,6 +372,10 @@ def resolve_mapping(mappings, role, sender_domain="", name=""):
     if domain:
         for row in rows:
             if (row["sender_domain"] or "").strip().lower() == domain:
+                return row
+        for row in rows:  # a subdomain is the same sender: De Well writes from qin.dewell.com and vn.dewell.com
+            mapped = (row["sender_domain"] or "").strip().lower()
+            if mapped and domain.endswith("." + mapped):
                 return row
     printed = " ".join((name or "").upper().split())
     if printed:
@@ -348,6 +454,9 @@ class Booker:
                  if values.get(k) and not plausible_identifier(values[k])]
         if wrong:
             values = {k: v for k, v in values.items() if k not in wrong}
+            doc = dict(doc, values=values)
+        if values.get("containers") and not all(valid_container_number(c) for c in values["containers"]):
+            values = dict(values, containers=[c for c in values["containers"] if valid_container_number(c)])
             doc = dict(doc, values=values)
         factory_doc = doc["doc_class"] in FACTORY_DOCS
         if factory_doc and values.get("bl_number") and not values.get("booking_number"):
@@ -502,6 +611,7 @@ class _Consolidation:
         self.updates = {}
         self.notes = []
         self.replaced = set()  # parties whose name this document replaced: their partner is found again
+        self.history_order = None  # the team's freight PO _PurchaseHistory found, with its vendor
 
     def current(self, name):
         return self.updates[name] if name in self.updates else self.booking.get(name)
@@ -510,7 +620,13 @@ class _Consolidation:
         kind = self.doc["doc_class"]
         trusted = {group for group, kinds in TRUSTED.items() if kind in kinds}
         if "schedule" in trusted or "factory_schedule" in trusted:
+            pod = self.values.get("port_of_discharge")
+            first_stop = bool(pod) and not is_destination_port(pod) and not is_inland_point(pod)
             for name in SCHEDULE_FIELDS:
+                if name == "eta" and first_stop:
+                    continue  # the ETA at that hub (YANTIAN on Hapag's first leg, 37643170), not in North America
+                if name == "etd" and kind == "shipping_notice" and self.current("etd"):
+                    continue  # an arrival notice's dates are the arrival: Hapag's moved 14546118's ETD to it
                 self.set(name, self.values.get(name))
         if "booking_number" in trusted:
             self.fill_booking_number(normalize_identifier(self.values.get("booking_number")))
@@ -525,10 +641,18 @@ class _Consolidation:
             for name in ("etd", "eta"):
                 self.set(name, self.values.get(name))
         if "bl" in trusted:
+            invoices = {normalize_identifier(i) for i in self.values.get("invoices") or []}
+            stem = normalize_identifier(re.sub(r"\.[A-Z0-9]{2,4}$", "", (self.doc.get("source") or "").upper().strip()))
+            numbers = {name: normalize_identifier(self.values.get(name)) for name in ("master_bl", "house_bl")}
+            if numbers["master_bl"] and stem == numbers["master_bl"] + "H" and not numbers["house_bl"]:
+                # Kerry names its house bill "<number>H.pdf": the number read as the MBL is the house bill.
+                numbers = {"master_bl": "", "house_bl": numbers["master_bl"]}
             for name, bl_type in (("master_bl", "master"), ("house_bl", "house")):
-                number = normalize_identifier(self.values.get(name))
+                number = numbers[name]
                 if is_container_number(number):
                     number = ""  # a container number read where the bill of lading number goes
+                if number in invoices or _INVOICE_NUMBER.match(number):
+                    number = ""  # a factory invoice number (F26AR10THA0693, GRKA-P-2026436) is never a B/L
                 self.set(name, number)
                 self.add_bl(bl_type, number)
         for role in ("forwarder", "factory"):
@@ -545,15 +669,69 @@ class _Consolidation:
         if "amounts" in trusted:
             self.set_amounts()
         self.mirror_bls()
+        self.check_eta()
         if self.current("freight_mode") == "unknown" and (
                 self.current("master_bl") or self.current("house_bl") or self.values.get("containers")):
             self.updates["freight_mode"] = "ocean"
-        if not self.booking["purchase_order_id"] and (self.current("master_bl") or self.current("house_bl")):
+        if not self.booking["purchase_order_id"] and (
+                self.current("master_bl") or self.current("house_bl") or self.current("booking_number")):
             self.updates.update(_PurchaseHistory(self).suggestions())
         if self.updates:
             self.odoo.write(BOOKING, [self.id], self.updates)
+        self.link_existing_po()
         for note in self.notes:
             self.odoo.call(BOOKING, "message_post", [self.id], body=note)
+
+    def check_eta(self):
+        """An ETA too soon after the ETD is a stop on the way, or a date the sailing has since moved past (14546118
+        kept 21 Sep after it sailed on 2 Oct): it is dropped, so the arrival is taken from the next paper."""
+        etd, eta = self.current("etd"), self.current("eta")
+        if not etd or not eta or self.booking.get("eta_confirmed"):
+            return
+        try:
+            days = (date.fromisoformat(str(eta)[:10]) - date.fromisoformat(str(etd)[:10])).days
+        except ValueError:
+            return
+        least = min_sea_days(self.current("port_of_loading"))
+        if days >= least:
+            return
+        self.updates["eta"] = False
+        if "eta_source" in self.booker.labels():
+            self.updates["eta_source"] = False
+        self.notes.append(f"ETA {str(eta)[:10]} dropped: {days} day(s) after the ETD {str(etd)[:10]} is not the arrival "
+                          f"(a crossing from {self.current('port_of_loading') or 'there'} takes {least} days or more).")
+
+    def link_existing_po(self):
+        """The team already raised this shipment's freight PO (same B/L, forwarder and container count, found by
+        _PurchaseHistory): link it, so the booking shows PO Matched and no second PO is drafted (user, 17 Nov 2026).
+        The module's Link Existing PO also copies the PO's vendor and rate per container onto the booking."""
+        order = self.updates.get("history_purchase_order_id")
+        if not order or self.booking.get("purchase_order_id"):
+            return
+        if self.booker.has_field(INVOICE, "purchase_order_id") and self.odoo.call(
+                INVOICE, "search_count", [("booking_id", "=", self.id), ("purchase_order_id", "!=", False)]):
+            return  # per-invoice POs exist already: linking another would bill the shipment twice
+        try:
+            self.odoo.call(BOOKING, "action_link_existing_po", [self.id])
+        except Exception as exc:  # an older module without the action, or Odoo refusing it
+            _logger.warning("Booking %s: existing freight PO %s not linked: %s", self.id, order, exc)
+            return
+        self.notes.append("PO already existing: the team's freight PO for this shipment (same B/L, forwarder and "
+                          "containers) was linked by the OCR service; no new PO is needed.")
+        vendor = (self.history_order or {}).get("partner_id")
+        forwarder = self.current("forwarder_id")
+        forwarder = forwarder[0] if isinstance(forwarder, list) else forwarder
+        if vendor and forwarder and m2o_id(vendor) != forwarder:
+            # The PO's vendor is the one paid: it replaces the forwarder the papers named.
+            mapped = [m["partner_name"] for m in self.booker.mappings
+                      if m["partner_id"] == forwarder and "partner_name" in m.keys() and m["partner_name"]]
+            was = mapped[0] if mapped else self.current("forwarder_name")
+            self.odoo.write(BOOKING, [self.id], {"forwarder_id": m2o_id(vendor), "forwarder_name": vendor[1]})
+            self.notes.append(f"Forwarder set to {vendor[1]}, the vendor of the team's PO {self.history_order['name']} "
+                              f"(the papers named {was}).")
+        copied = copy_po_details(self.odoo, self.id, order)
+        if copied:
+            self.notes.append(f"From the team's PO: {', '.join(copied)}.")
 
     def take_value(self, name, value):
         self.updates[name] = value
@@ -569,9 +747,10 @@ class _Consolidation:
         if name in ("etd", "eta"):
             value = plausible_date(name, parse_date(value), self.doc["received"]) or ""
             if name == "eta" and value:
-                etd = plausible_date("etd", parse_date(self.values.get("etd")), self.doc["received"])                     or self.current("etd")
-                if etd and value < str(etd)[:10]:
-                    return  # arriving before it sails: another date read as the ETA
+                etd = (plausible_date("etd", parse_date(self.values.get("etd")), self.doc["received"])
+                       or self.current("etd"))
+                if etd and value <= str(etd)[:10]:
+                    return  # arriving the day it sails or before: another date read as the ETA
         else:
             value = str(value or "").strip()
             if name == "vessel" and value and not plausible_vessel(value):
@@ -595,8 +774,24 @@ class _Consolidation:
                 self.updates[f"{name}_assumed"] = False
                 self.booking[f"{name}_assumed"] = False
             return
+        if str(self.booking.get(f"{name}_source") or "").startswith("Booking Report") \
+                and self.doc["doc_class"] != "email_message":
+            # The team's plan filled it while no paper had: the paper replaces the plan.
+            self.take_value(name, value)
+            self.notes.append(f"{self.booker.labels().get(name, name)} set to {value} by {self.source} "
+                              f"(was {old} from the {self.booking.get(f'{name}_source')}).")
+            return
         if name in ("etd", "eta") and swapped_date(old, value):
             return  # the same date with day and month the other way round
+        if name == "port_of_discharge" and is_destination_port(value) != is_destination_port(old):
+            # The cargo comes to North America: a foreign port held as the port of discharge is a transshipment hub
+            # (SINGAPORE, YANTIAN on a Hapag confirmation's first leg) or the port of loading (TANGER MED).
+            if is_destination_port(value):
+                self.take_value(name, value)
+                self.notes.append(f"Port of Discharge set to {value}; {old} is not a destination port ({self.source}).")
+            return
+        if name in ("master_bl", "house_bl", "booking_number") and same_identifier(old, value):
+            return  # one look-alike character read differently (HLCUBKK2609ATNKS, ATNK5): the first reading stays
         terminal_new, terminal_old = bool(_TERMINAL.search(value)), bool(_TERMINAL.search(old))
         if name in ("port_of_loading", "port_of_discharge") and terminal_new != terminal_old:
             if terminal_new:
@@ -607,6 +802,11 @@ class _Consolidation:
         # An email, or the factory's own paper, fills empty fields but never disputes a value.
         email = self.doc["doc_class"] == "email_message" or self.doc["doc_class"] in FACTORY_DOCS
         if a == b or (b and b in a):
+            return
+        if name == "house_bl" and not email and a == normalize_identifier(self.current("master_bl")):
+            # The HBL only repeated the MBL (no house bill known yet): the forwarder's own house bill takes it.
+            self.take_value(name, value)
+            self.notes.append(f"House B/L set to {value} (it only repeated the MBL {old}) by {self.source}.")
             return
         if a and a in b and not email:
             self.take_value(name, value)  # the same value, stated more fully
@@ -623,6 +823,19 @@ class _Consolidation:
                 self.notes.append(f"{label} set to the ocean vessel {value} (was the feeder {old}) by {self.source}.")
                 return
         if name == "forwarder_name":
+            # A mapped forwarder's own papers (Kerry's notices from kln.com) also print a staff handle (BRIGHT #241)
+            # or the carrier's agent (MARINE (HKG) LTD.): an unmapped name there never disputes; the forwarder's
+            # own mapped name replaces such a name.
+            sender = resolve_mapping(self.booker.mappings, "forwarder",
+                                     sender_domain=(self.doc["sender"] or "").rpartition("@")[2])
+            if sender:
+                printed = resolve_mapping(self.booker.mappings, "forwarder", name=value)
+                if not printed:
+                    return
+                if printed["partner_id"] == sender["partner_id"] \
+                        and not resolve_mapping(self.booker.mappings, "forwarder", name=old):
+                    self.take_value(name, value)
+                    return
             if CARRIER.search(value) and not CARRIER.search(old):
                 return  # the carrier's own document names the carrier; the forwarder stays
             # Only a mapped forwarder replaces a carrier: an unmapped name may be a shipper misread as forwarder.
@@ -666,11 +879,15 @@ class _Consolidation:
             return  # the importer printed as consignee or booking party
         if role == "forwarder" and any(broker in normalize_identifier(name) for broker in CUSTOMS_BROKERS):
             return  # the customs broker's own papers (DO invoice, ISF) name it, not the ocean forwarder
+        domain = (self.doc["sender"] or "").rpartition("@")[2]
+        by_domain = resolve_mapping(self.booker.mappings, role, sender_domain=domain)
+        if role == "forwarder" and by_domain and CARRIER.search(name) and not CARRIER.search(by_domain["document_name"] or ""):
+            # A forwarder sends the carrier's own confirmation (De Well forwards Hapag-Lloyd's, 37643170): the carrier
+            # printed there is not the payable vendor, the sender is (check of the Ready for PO bookings, 17 Nov 2026).
+            name = (by_domain["partner_name"] if "partner_name" in by_domain.keys() else None) or by_domain["document_name"]
         self.set(f"{role}_name", name)
         if self.current(f"{role}_id") and role not in self.replaced:
             return
-        domain = (self.doc["sender"] or "").rpartition("@")[2]
-        by_domain = resolve_mapping(self.booker.mappings, role, sender_domain=domain)
         by_printed = resolve_mapping(self.booker.mappings, role, name=name)
         # One sender domain can serve several factories (Sentury Thailand and Morocco, Jinfei and
         # Vossen): when the printed name names another mapped vendor, the document wins.
@@ -738,11 +955,12 @@ class _Consolidation:
         lines = self.odoo.search_read(CONTAINER, [("booking_id", "=", self.id)],
                                       ["container_no", "state"] + (["invoice_id"] if tagging else []))
         known = {line["container_no"]: line for line in lines}
-        if invoice_id:  # containers another document gave first now belong to this invoice
-            untagged = [known[c]["id"] for c in containers
-                        if c in known and known[c]["state"] == "active" and not known[c].get("invoice_id")]
-            if untagged:
-                self.odoo.write(CONTAINER, untagged, {"invoice_id": invoice_id})
+        if invoice_id:  # the factory invoice's own containers belong to it, whoever gave or tagged them first
+            # (the fill tags a booking's containers to its only invoice; a later invoice takes back its own)
+            others = [known[c]["id"] for c in containers if c in known and known[c]["state"] == "active"
+                      and m2o_id(known[c].get("invoice_id")) != invoice_id]
+            if others:
+                self.odoo.write(CONTAINER, others, {"invoice_id": invoice_id})
         new = [c for c in containers if c not in known]
         if not new:
             return
@@ -783,8 +1001,9 @@ class _Consolidation:
 
     def set_amounts(self):
         amounts = {name: self.values[name] for name in ("freight_cost", "additional_charges") if self.values.get(name)}
-        if not amounts:
-            return
+        sender = (self.doc["sender"] or "").rpartition("@")[2].lower()
+        if not amounts or sender in CUSTOMS_BROKER_DOMAINS:
+            return  # a customs broker's DO invoice bills its own fees ($110 entry), not the ocean freight
         currency = self.odoo.search_read("res.currency", [("name", "=", (self.values.get("currency") or "").upper())],
                                          ["name", "rounding"], context={"active_test": False}, limit=1)
         if not currency:
@@ -796,19 +1015,15 @@ class _Consolidation:
                               f"its amounts were not taken.")
             return
         self.updates["freight_currency_id"] = currency["id"]
-        # A forwarder bills each factory invoice of a shipment on its own freight invoice (one PO each):
-        # their amounts differ by right, so a booking with several factory invoices notes them, never disputes.
-        several = self.odoo.call(INVOICE, "search_count", [("booking_id", "=", self.id)]) > 1
+        # The freight PO is priced from the agreed rate per container, never from these amounts (freight PO study,
+        # 16 Nov 2026): another amount is noted on the booking, never a conflict for a person.
         for name, amount in amounts.items():
             old = self.booking[name]
             if not old:
                 self.updates[name] = amount
             elif abs(old - amount) > currency["rounding"]:
-                if several:
-                    self.notes.append(f"{self.source} states {self.booker.labels().get(name, name)} {amount:,.2f}; "
-                                      f"the booking keeps {old:,.2f} (each factory invoice is billed on its own).")
-                else:
-                    self.conflict(name, old, amount)
+                self.notes.append(f"{self.source} states {self.booker.labels().get(name, name)} {amount:,.2f}; "
+                                  f"the booking keeps {old:,.2f}.")
 
 
 class _PurchaseHistory:
@@ -818,23 +1033,61 @@ class _PurchaseHistory:
         self.run = run
         self.odoo = run.odoo
 
+    _FIELDS = ["name", "partner_id", "partner_ref", "master_bl", "house_bl", "invoice_ids", "picking_type_id",
+               "date_order"]
+
+    def by_containers(self, held, open_orders):
+        """POs listing every container this booking holds, raised around its sailing. A container is reused shipment
+        after shipment, so only a PO dated from 30 days before the ETD to 150 days after it counts."""
+        try:
+            sailed = date.fromisoformat(str(self.run.current("etd") or "")[:10])
+        except ValueError:
+            return []
+        if not held:
+            return []
+        clauses = [("container_number", "ilike", c) for c in held]
+        out = []
+        for o in self.odoo.search_read("purchase.order", open_orders + ["|"] * (len(clauses) - 1) + clauses,
+                                       self._FIELDS + ["container_number"]):
+            listed = {normalize_identifier(c) for c in re.split(r"[,;/&\s]+", o["container_number"] or "")}
+            try:
+                day = date.fromisoformat(str(o["date_order"] or "")[:10])
+            except ValueError:
+                continue
+            if set(held) <= listed and sailed - timedelta(days=30) <= day <= sailed + timedelta(days=150):
+                out.append(o)
+        return out
+
     def suggestions(self):
         keys = {k for k in (self.run.current("master_bl"), self.run.current("house_bl")) if k}
+        number = _SCAC.sub("", normalize_identifier(self.run.current("booking_number")))
         po_fields = self.odoo.call("purchase.order", "fields_get", attributes=["type"])
-        if not keys or "master_bl" not in po_fields:
+        held = [c["container_no"] for c in self.odoo.search_read(
+            CONTAINER, [("booking_id", "=", self.run.id), ("state", "=", "active")], ["container_no"])]
+        if (not keys and len(number) < 6 and not held) or "master_bl" not in po_fields:
             return {}
-        clauses = [c for k in keys for c in (("master_bl", "ilike", k[-6:]), ("house_bl", "ilike", k[-6:]))]
-        orders = self.odoo.search_read(
-            "purchase.order",
-            [("state", "!=", "cancel"), ("company_id", "=", self.run.booker.company_id)]
-            + ["|"] * (len(clauses) - 1) + clauses,
-            ["name", "partner_id", "partner_ref", "master_bl", "house_bl", "invoice_ids", "picking_type_id",
-             "date_order"])
-        orders = [o for o in orders if keys & {normalize_identifier(p) for p in re.split(
-            r"[,;/&\n]|\bAND\b", f"{o['master_bl'] or ''},{o['house_bl'] or ''}", flags=re.I)}]
-        if not orders:
+        open_orders = [("state", "!=", "cancel"), ("company_id", "=", self.run.booker.company_id)]
+        orders = []
+        if keys:
+            # The carrier code may stand before the number on either side: WHLC035GX69537 is 035GX69537 (P70039).
+            bare = {_SCAC.sub("", normalize_identifier(k)) for k in keys}
+            clauses = [c for k in keys for c in (("master_bl", "ilike", k[-6:]), ("house_bl", "ilike", k[-6:]))]
+            orders = self.odoo.search_read("purchase.order", open_orders + ["|"] * (len(clauses) - 1) + clauses,
+                                           self._FIELDS)
+            orders = [o for o in orders if bare & {_SCAC.sub("", normalize_identifier(p)) for p in re.split(
+                r"[,;/&\n]|\bAND\b", f"{o['master_bl'] or ''},{o['house_bl'] or ''}", flags=re.I)}]
+        by_container = self.by_containers(held, open_orders) if "container_number" in po_fields else []
+        # The team's Vendor Reference is the booking number on most freight POs (Hapag 94659872; De Well
+        # 31978034-2 for a split PO): it finds the PO first, the B/L when it holds something else (user, 17 Nov 2026).
+        by_reference = []
+        if len(number) >= 6:
+            by_reference = [o for o in self.odoo.search_read("purchase.order", open_orders + [("partner_ref", "ilike", number)],
+                                                              self._FIELDS)
+                            if reference_number(o["partner_ref"]) == number]
+        if not orders and not by_reference and not by_container:
             return {}
-        lines = self.odoo.search_read("purchase.order.line", [("order_id", "in", [o["id"] for o in orders])],
+        lines = self.odoo.search_read("purchase.order.line",
+                                      [("order_id", "in", sorted({o["id"] for o in orders + by_reference + by_container}))],
                                       ["order_id", "product_id", "product_qty"])
         product_ids = sorted({m2o_id(line["product_id"]) for line in lines if line["product_id"]})
         storable = {p["id"] for p in self.odoo.call("product.product", "read", product_ids, ["is_storable"])
@@ -846,23 +1099,36 @@ class _PurchaseHistory:
         goods = [o for o in orders if any(m2o_id(line["order_id"]) == o["id"] and m2o_id(line["product_id"]) in storable
                                           for line in lines)]
         values = {}
-        bill_ids = [i for o in goods for i in o["invoice_ids"]]
-        bills = self.odoo.search_read("account.move", [("id", "in", bill_ids), ("state", "=", "posted"),
-                                                       ("move_type", "=", "in_invoice")], ["ref"]) if bill_ids else []
-        refs = sorted({normalize_identifier(r) for r in [o["partner_ref"] for o in goods] + [b["ref"] for b in bills]}
-                      - {""})
-        values["invoice_references"] = ",".join(refs) or False
+        if orders:  # the goods POs are found by B/L only
+            bill_ids = [i for o in goods for i in o["invoice_ids"]]
+            bills = self.odoo.search_read("account.move", [("id", "in", bill_ids), ("state", "=", "posted"),
+                                                           ("move_type", "=", "in_invoice")], ["ref"]) if bill_ids else []
+            refs = sorted({normalize_identifier(r) for r in [o["partner_ref"] for o in goods] + [b["ref"] for b in bills]}
+                          - {""})
+            values["invoice_references"] = ",".join(refs) or False
 
         forwarder = self.run.current("forwarder_id")
         forwarder = forwarder[0] if isinstance(forwarder, list) else forwarder
         containers = self.odoo.call(CONTAINER, "search_count", [("booking_id", "=", self.run.id),
                                                                  ("state", "=", "active")])
-        freight = [o for o in orders if (not forwarder or m2o_id(o["partner_id"]) == forwarder) and any(
-            m2o_id(line["order_id"]) == o["id"] and m2o_id(line["product_id"]) in freight_products
-            and (not containers or line["product_qty"] == containers) for line in lines)]
+        def ocean(o, whole=True):
+            return any(m2o_id(line["order_id"]) == o["id"] and m2o_id(line["product_id"]) in freight_products
+                       and (not whole or not containers or line["product_qty"] == containers) for line in lines)
+
+        def same_vendor(o):
+            return not forwarder or m2o_id(o["partner_id"]) == forwarder
+
+        found = {o["id"] for o in orders + by_container}
+        # The PO named after the booking is its PO; under another vendor too when a B/L or container agrees, the
+        # vendor on the papers being the one wrong (K-APEX papers, Quartz PO P78483 for BKKM68473200).
+        freight = ([o for o in by_reference if ocean(o) and (same_vendor(o) or o["id"] in found)]
+                   or [o for o in orders if same_vendor(o) and ocean(o)]
+                   # A PO raised for two bookings holds both shipments' containers (P78536: 22492448 and 37643170).
+                   or [o for o in by_container if same_vendor(o) and ocean(o, whole=False)])
         if freight:
             order = max(freight, key=lambda o: o["date_order"])
             values["history_purchase_order_id"] = order["id"]
+            self.run.history_order = order
             if not forwarder:
                 values["history_forwarder_id"] = m2o_id(order["partner_id"])
         factories = {m2o_id(o["partner_id"]) for o in goods}
@@ -874,3 +1140,29 @@ class _PurchaseHistory:
             if warehouse:
                 values["history_warehouse_id"] = warehouse[0]
         return values
+
+
+def link_team_pos(odoo, mappings):
+    """The team uploads its freight POs from the logsheet after the papers arrive (user, 17 Nov 2026): every booking
+    still without a PO is looked up again, and the team's PO, once it exists, is linked as PO already existing so no
+    second PO is drafted. Run on the hourly pass. Returns how many bookings were linked."""
+    bookers, linked = {}, 0
+    fields = list(_READ) + ["company_id"]
+    for booking in odoo.search_read(BOOKING, [("purchase_order_id", "=", False),
+                                              ("state", "not in", ["po_created", "po_matched"])], fields):
+        if not (booking["booking_number"] or booking["master_bl"] or booking["house_bl"]):
+            continue
+        company = booking["company_id"][0] if isinstance(booking["company_id"], list) else booking["company_id"]
+        booker = bookers.setdefault(company, Booker(odoo, company, mappings, lambda _doc, _booking: False))
+        run = _Consolidation(booker, booking, {"doc_class": "team_po_check", "values": {}, "source": "the team's POs",
+                                               "subject": "", "sender": "", "received": None, "file_id": None})
+        values = _PurchaseHistory(run).suggestions()
+        if not values.get("history_purchase_order_id"):
+            continue
+        odoo.write(BOOKING, [booking["id"]], values)
+        run.updates.update(values)
+        run.link_existing_po()
+        for note in run.notes:
+            odoo.call(BOOKING, "message_post", [booking["id"]], body=note)
+        linked += 1
+    return linked

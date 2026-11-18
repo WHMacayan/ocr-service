@@ -145,3 +145,16 @@ class Graph:
     def attachment(self, message_id, attachment_id):
         return self.get(f"{GRAPH_BASE}/me/messages/{message_id}/attachments/{attachment_id}",
                         timeout=120)
+
+    def attached_email(self, message_id, attachment_id):
+        """The raw MIME of an email attached to an email (an item attachment), with its own files inside."""
+        url = f"{GRAPH_BASE}/me/messages/{message_id}/attachments/{attachment_id}/$value"
+        for _attempt in range(NETWORK_RETRIES + 1):
+            resp = self.http.get(url, headers=self._headers(), timeout=120)
+            if resp.status_code in (429, 503, 504):
+                self.sleep(int(resp.headers.get("Retry-After", 10)))
+                continue
+            if resp.status_code != 200:
+                raise GraphError(f"Microsoft Graph error {resp.status_code}:\n{resp.text[:1000]}")
+            return resp.content
+        raise GraphError("Outlook stayed busy: the attached email was not downloaded")

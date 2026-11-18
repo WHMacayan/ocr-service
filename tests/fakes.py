@@ -51,6 +51,10 @@ class FakeGraph:
         self.downloads += 1
         return next(a for a in self.files[message_id] if a["id"] == attachment_id)
 
+    def attached_email(self, message_id, attachment_id):
+        self.downloads += 1
+        return next(a for a in self.files[message_id] if a["id"] == attachment_id)["mime"]
+
 
 def mailbox(db, **extra):
     """Insert a mailbox and return it as the worker sees it."""
@@ -218,6 +222,12 @@ class FakeOdoo:
             return True
         if method == "message_post":
             self.posts.append((model, args, kwargs))
+            return True
+        if method == "action_link_existing_po":  # as b2b_ocr_documents does it
+            for i in args[0]:
+                row = self.rows(model)[i]
+                row.update(purchase_order_id=row["history_purchase_order_id"], purchase_order_matched=True,
+                           history_purchase_order_id=False)
             return True
         raise AssertionError(f"unexpected call {model}.{method}")
 

@@ -5,12 +5,15 @@ dates the text really prints are kept. Port of b2b_freight_ocr's document
 reading and the mailbox's email values.
 """
 
+import hashlib
+import json
 import re
 from datetime import date
 
 from . import ai
 from .text import (appears_in, booking_number_in_subject, plausible_identifier, date_appears_in, file_text, find_container_numbers,
-                   find_house_bl, find_master_bl, is_container_number, normalize_identifier, parse_month_date)
+                   find_house_bl, find_master_bl, is_container_number, normalize_identifier, parse_month_date,
+                   valid_container_number)
 
 FREIGHT_CLASSES = (
     "booking_confirmation", "commercial_invoice", "packing_list", "certificate_of_origin", "mbl_hbl",
@@ -62,6 +65,20 @@ for _schema in (FREIGHT_SCHEMA, INVOICE_SCHEMA):
 SUBJECT_GROUPS = ("booking_number", "master_bl", "house_bl", "invoice_number", "etd", "eta")
 
 
+# The text read again when a full reading's answer overflowed the model's output limit.
+SHORT_READ_CHARS = 12000
+
+
+def reading_version(purpose, settings):
+    """A short fingerprint of what a reading depends on: the model, the instructions and the fields asked for.
+    A stored reading with another fingerprint was made by older instructions and is read again (17 Nov 2026:
+    77 certificates of origin read as factory invoices by the earlier prompt stayed in use)."""
+    freight = purpose == "freight_booking"
+    basis = json.dumps([settings.get("openai_model"), settings.get("freight_prompt" if freight else "invoice_prompt"),
+                        FREIGHT_SCHEMA if freight else INVOICE_SCHEMA], sort_keys=True)
+    return hashlib.sha256(basis.encode()).hexdigest()[:16]
+
+
 def read_file(raw, purpose, settings):
     """``(doc_class, values)`` of a saved file; ``(None, {})`` when it has no text.
 
@@ -71,10 +88,15 @@ def read_file(raw, purpose, settings):
     if not text.strip():
         return None, {}
     freight = purpose == "freight_booking"
-    parsed = ai.extract(
+    ask = lambda chars: ai.extract(
         settings["openai_api_key"], settings["openai_model"],
         settings["freight_prompt" if freight else "invoice_prompt"],
-        text[:int(settings["max_chars"])], FREIGHT_SCHEMA if freight else INVOICE_SCHEMA)
+        text[:chars], FREIGHT_SCHEMA if freight else INVOICE_SCHEMA)
+    try:
+        parsed = ask(int(settings["max_chars"]))
+    except ai.AnswerTooLong:
+        # A document listing hundreds of lines (a statement) overflows the answer: its first pages tell what it is.
+        parsed = ask(SHORT_READ_CHARS)
     values = checked(parsed, text)
     if freight:
         return values.get("doc_class") or "unknown", values
@@ -111,7 +133,7 @@ def checked(parsed, text):
     for key in ("containers", "invoices", "po_numbers"):
         if key in values:
             values[key] = [normalize_identifier(v) for v in values[key] if appears_in(text, v)
-                           and (key != "containers" or is_container_number(v))]
+                           and (key != "containers" or valid_container_number(v))]
     for key in ("etd", "eta", "invoice_date"):
         if key in values and not date_appears_in(text, values[key]):
             values.pop(key)

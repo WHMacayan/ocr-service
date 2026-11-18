@@ -46,7 +46,8 @@ def create_app():
         SESSION_COOKIE_SAMESITE="Lax",
         # Signed in for 30 days from the last visit: each visit renews it, so a browser in use stays signed in.
         PERMANENT_SESSION_LIFETIME=timedelta(days=30),
-        MAX_CONTENT_LENGTH=1024 * 1024,
+        # Uploads: the Booking Report and setup workbooks, a backup file (the Import / Export page).
+        MAX_CONTENT_LENGTH=25 * 1024 * 1024,
     )
     app.register_blueprint(bp)
 
@@ -118,6 +119,35 @@ def create_app():
                 if out:
                     booking_report.write_report(out, outcomes)
                     print(f"  row-by-row result: {out}")
+        finally:
+            db.close()
+
+    @app.cli.command("fill-bookings")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
+    @click.option("--apply", is_flag=True, help="Write the values; without it, only report them.")
+    def fill_bookings_command(path, apply):
+        """Fill the empty fields a freight PO needs (factory invoice, Deliver To, rate, factory, charges) from the
+        Booking Report and the team's own freight POs, in every Odoo connection that is on (flows/booking_fill.py)."""
+        from openpyxl import load_workbook
+
+        from .flows import booking_fill
+        from .odoo.client import Odoo
+        rows = booking_fill.read_details(load_workbook(path, read_only=True, data_only=True))
+        print(f"{len(rows)} booking rows read from {path}")
+        db = store.connect()
+        try:
+            mappings = db.execute("SELECT * FROM vendor_mapping WHERE active = 1").fetchall()
+            for connection in store.connections(db, on=True):
+                odoo = Odoo.from_connection(db, connection)
+                done, summary = booking_fill.fill(odoo, mappings, rows, apply=apply)
+                print(f"{connection['name']}{'' if apply else ' (report only, nothing written)'}: "
+                      f"{len(done)} bookings filled")
+                for field, count in summary.most_common():
+                    print(f"  {count:5}  {field}")
+                if apply:
+                    store.log_activity(db, "settings", f"Filled {len(done)} bookings from the Booking Report and the "
+                                       f"team's freight POs ({connection['name']})", actor="admin")
+                    db.commit()
         finally:
             db.close()
 

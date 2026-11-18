@@ -14,6 +14,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
+from datetime import datetime, timezone
 
 from ..documents import extract
 from ..core import store
@@ -44,6 +45,9 @@ def process(db, odoo, connection_id, purposes=None):
     # New emails first, each state with its own limit: emails waiting for review must never fill
     # the run and starve the newer emails whose bookings they are waiting for.
     # No row in message_target yet: never processed in this connection, so new there.
+    # Waiting emails take turns, the least recently tried first: retried oldest-first, the same hundred that
+    # never match came back every run and the rest never did (839 waiting in 1111, 17 Nov 2026).
+    order = {"new": "m.received, m.id", "review": "COALESCE(t.processed_at, ''), m.received, m.id"}
     rows = [row for state in ("new", "review") for row in db.execute(
         "SELECT m.*, mb.purpose, mb.company_id, mb.booking_number_pattern, t.state AS t_state, "
         "t.attempts AS t_attempts, t.email_done AS t_email_done FROM message m "
@@ -52,7 +56,7 @@ def process(db, odoo, connection_id, purposes=None):
         "WHERE COALESCE(t.state, CASE m.state WHEN 'skipped' THEN 'skipped' ELSE 'new' END) = ? "
         "AND COALESCE(m.received, '') >= COALESCE(?, '') "
         f"AND {_purposes_clause(purposes)} "
-        "ORDER BY m.received, m.id LIMIT ?", (connection_id, state, start_from, *(purposes or ()), limit)).fetchall()]
+        f"ORDER BY {order[state]} LIMIT ?", (connection_id, state, start_from, *(purposes or ()), limit)).fetchall()]
     read_ahead(db, rows, settings)
     for row in rows:
         message = dict(row, state=row["t_state"] or "new", attempts=row["t_attempts"] or 0,
@@ -65,6 +69,7 @@ def process(db, odoo, connection_id, purposes=None):
             attempts = message["attempts"] + 1
             set_target(db, message["id"], connection_id, attempts=attempts, note=str(exc)[:2000],
                        state="failed" if attempts >= max_retries else message["state"])
+        set_target(db, message["id"], connection_id, processed_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
         store.refresh_messages(db, [message["id"]])
         db.commit()
     if purposes is None or "bill_matching" in purposes:
@@ -87,8 +92,11 @@ def read_ahead(db, rows, settings):
     if parallel < 2 or not ids:
         return
     purpose_of = {row["id"]: row["purpose"] for row in rows}
-    files = db.execute(f"SELECT id, path, message_id FROM file WHERE extracted IS NULL AND message_id IN "
-                       f"({', '.join('?' * len(ids))})", ids).fetchall()
+    version = {purpose: extract.reading_version(purpose, settings) for purpose in READ_BY_AI}
+    # Unread, or read by other instructions (another reading_version): read now.
+    files = [f for f in db.execute(f"SELECT id, path, message_id, extracted, read_with FROM file WHERE message_id IN "
+                                   f"({', '.join('?' * len(ids))})", ids).fetchall()
+             if f["extracted"] is None or f["read_with"] != version[purpose_of[f["message_id"]]]]
 
     def read(file):
         with open(file["path"], "rb") as handle:
@@ -105,8 +113,8 @@ def read_ahead(db, rows, settings):
                 continue
             if doc_class is None:
                 continue  # no text: its turn says so
-            db.execute("UPDATE file SET doc_class = ?, extracted = ? WHERE id = ?",
-                       (doc_class, json.dumps(values), file["id"]))
+            db.execute("UPDATE file SET doc_class = ?, extracted = ?, read_with = ? WHERE id = ?",
+                       (doc_class, json.dumps(values), version[purpose_of[file["message_id"]]], file["id"]))
             db.commit()  # the AI is paid for
 
 
@@ -201,6 +209,9 @@ class _Run:
                     self._file(file, *self.customs.take(file, message["received"]))
                 continue
             doc_class, values = file["doc_class"], json.loads(file["extracted"] or "null")
+            version = extract.reading_version(message["purpose"], self.settings)
+            if file["read_with"] != version:
+                values = None  # read by other instructions: read again
             if values is None:
                 self.db.commit()  # never hold the database while the AI reads
                 with open(file["path"], "rb") as handle:
@@ -208,8 +219,8 @@ class _Run:
                 if doc_class is None:
                     self._file(file, "skipped", "No readable text in this file.")
                     continue
-                self.db.execute("UPDATE file SET doc_class = ?, extracted = ? WHERE id = ?",
-                                (doc_class, json.dumps(values), file["id"]))
+                self.db.execute("UPDATE file SET doc_class = ?, extracted = ?, read_with = ? WHERE id = ?",
+                                (doc_class, json.dumps(values), version, file["id"]))
                 self.db.commit()  # the AI is paid for: keep its reading whatever happens next
             doc = dict(base, doc_class=doc_class, values=values, source=file["filename"], file_id=file["id"])
             with _source(self.odoo, message["id"], file["id"]):

@@ -150,3 +150,20 @@ def test_a_start_date_further_back_than_the_look_back_is_where_reading_starts():
     assert window_filter(box, NOW) == "receivedDateTime ge 2026-09-01T00:00:00Z"
     assert window_days(box, NOW) == 61                                     # the page limit covers it
     assert window_days({"fetch_window_days": 14}, NOW) == 20               # from Monday 12 Oct, as before
+
+
+def test_an_email_attached_to_an_email_gives_its_files(db):
+    from email.message import EmailMessage
+    inner = EmailMessage()
+    inner["Subject"] = "American Tire Depot Billing 11/07/2026"
+    inner.set_content("see attached")
+    inner.add_attachment(PDF, maintype="application", subtype="pdf", filename="invoice-1253943.pdf")
+    outer = {"id": "a1", "name": "FW: American Tire Depot Billing", "size": 10, "isInline": False,
+             "@odata.type": "#microsoft.graph.itemAttachment", "mime": inner.as_bytes()}
+    graph = FakeGraph([message(1)], {"graph-1": [outer]})
+
+    assert sync(db, graph, mailbox(db)) == "success"
+
+    [document] = rows(db, "file")
+    assert document["filename"] == "invoice-1253943.pdf"
+    assert Path(document["path"]).read_bytes() == PDF

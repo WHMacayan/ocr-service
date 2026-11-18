@@ -146,7 +146,9 @@ ADDED_COLUMNS = [("message", "processed_at", "TEXT"), ("odoo_change", "values_js
                  ("payables_setting", "export_every", "INTEGER NOT NULL DEFAULT 1"),
                  ("payables_setting", "export_unit", "TEXT NOT NULL DEFAULT 'days'"),
                  ("payables_setting", "export_next", "TEXT"), ("payables_setting", "export_last_at", "TEXT"),
-                 ("payables_setting", "export_last_run", "TEXT")]
+                 ("payables_setting", "export_last_run", "TEXT"),
+                 # Which AI model and instructions made the file's reading (extract.reading_version).
+                 ("file", "read_with", "TEXT")]
 
 # The one Odoo connection the Settings page held before there were several.
 OLD_CONNECTION_SETTINGS = ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key")
@@ -350,5 +352,10 @@ def refresh_messages(db, message_ids=None):
             shown = min(db.execute("SELECT * FROM file_target WHERE file_id = ?", (file["id"],)).fetchall(),
                         key=lambda t: ranks.get(t["connection_id"], len(ranks)), default=None)
             if shown:
+                # A record id means something only in its own database: one from a connection that is off (the
+                # 1111 test run) is not a record of the one the pages read (1115), whatever its number.
                 db.execute("UPDATE file SET state = ?, note = ?, odoo_id = ? WHERE id = ?",
-                           (shown["state"], shown["note"], shown["odoo_id"], file["id"]))
+                           (shown["state"], shown["note"], shown["odoo_id"] if shown["connection_id"] in ranks else None,
+                            file["id"]))
+            else:  # its records were cleared (a clean start): it points at nothing until processed again
+                db.execute("UPDATE file SET odoo_id = NULL WHERE id = ?", (file["id"],))

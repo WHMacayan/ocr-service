@@ -7,5 +7,5 @@ from flask import Blueprint
 
 bp = Blueprint("web", __name__)
 
-from . import (activity, auth, base, bookings, connections, emails, odoo_records, payables,  # noqa: E402,F401
+from . import (activity, auth, base, bookings, connections, data_transfer, emails, odoo_records, payables,  # noqa: E402,F401
                search, settings, setup, ui)

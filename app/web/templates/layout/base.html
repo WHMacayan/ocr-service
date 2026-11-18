@@ -33,6 +33,7 @@
         <div class="o-dropdown-menu">
           {% for key, f in forms.items() %}<a href="{{ url_for('web.records', key=key) }}">{{ f.title }}</a>{% endfor %}
           <a href="{{ url_for('web.settings') }}">Settings</a>
+          <a href="{{ url_for('web.import_export') }}">Import / Export</a>
         </div>
       </details>
     </div>

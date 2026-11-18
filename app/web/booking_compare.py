@@ -7,7 +7,7 @@ other than what the service last wrote: a person changed it, or something else d
 
 import json
 
-from ..core.store import reference_changes
+from ..core.store import reference_changes, reference_connection
 
 BOOKING = "b2b.ocr.booking"
 
@@ -39,6 +39,13 @@ def booking_ids(db):
     mine, args = reference_changes(db)
     ids = {r[0] for r in db.execute(f"SELECT DISTINCT record_id FROM odoo_change c WHERE model = ? AND {mine}",
                                     (BOOKING, *args))}
+    reference = reference_connection(db)
+    if reference:  # the files' records in the database the page reads; another database's ids are not its records
+        ids |= {r[0] for r in db.execute(
+            "SELECT DISTINCT t.odoo_id FROM file_target t JOIN file f ON f.id = t.file_id JOIN message m "
+            "ON m.id = f.message_id JOIN mailbox b ON b.id = m.mailbox_id WHERE t.connection_id = ? "
+            "AND t.odoo_id IS NOT NULL AND b.purpose = 'freight_booking'", (reference["id"],))}
+        return ids
     ids |= {r[0] for r in db.execute(
         "SELECT DISTINCT f.odoo_id FROM file f JOIN message m ON m.id = f.message_id JOIN mailbox b "
         "ON b.id = m.mailbox_id WHERE f.odoo_id IS NOT NULL AND b.purpose = 'freight_booking'")}

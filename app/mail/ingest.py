@@ -7,6 +7,8 @@ with its files in one transaction - fully saved or not at all.
 """
 
 import base64
+import email
+import email.policy
 import hashlib
 import logging
 import time
@@ -119,6 +121,20 @@ def is_skipped_sender(mailbox, msg):
     skipped = {d.strip().lower() for d in (mailbox.get("skip_sender_domains") or "").split(",")
                if d.strip()}
     return domain_of(sender_of(msg)) in skipped
+
+
+def files_in_email(mime):
+    """The attached files of a raw email (and of emails attached inside it), shaped like Graph file
+    attachments so they are saved like any other."""
+    parsed = email.message_from_bytes(mime, policy=email.policy.default)
+    found = []
+    for part in parsed.walk():
+        name = part.get_filename()
+        if not name or part.is_multipart():
+            continue
+        raw = part.get_payload(decode=True) or b""
+        found.append({"name": name, "isInline": False, "contentBytes": base64.b64encode(raw).decode()})
+    return found
 
 
 def is_supported_file(raw):
@@ -368,7 +384,13 @@ class MailboxSync:
             self.log(f"  {len(metadata)} attachment(s).")
             for att in metadata:
                 try:
-                    payloads.append(self.graph.attachment(msg["id"], att["id"]))
+                    if att.get("@odata.type", "").endswith("itemAttachment"):
+                        # An email forwarded as an attachment: its invoice PDFs are inside it (72 lost before 17 Nov 2026).
+                        inner = files_in_email(self.graph.attached_email(msg["id"], att["id"]))
+                        self.log(f"  {att.get('name') or 'attached email'}: an attached email with {len(inner)} file(s).")
+                        payloads.extend(inner)
+                    else:
+                        payloads.append(self.graph.attachment(msg["id"], att["id"]))
                 except Exception as exc:
                     counters["invalid"] += 1
                     self.log(f"  {att.get('name')}: download failed - {exc}")

@@ -1,6 +1,10 @@
-"""Customs entry summaries: upload each CBP 7501 or 3461 PDF to the customs audit
-module (b2b_cbp_7501_audit_odoo) as an entry in the day's batch. Nothing more:
-the entry is not parsed or audited here, a person does that in Odoo.
+"""Customs entry summaries: upload each CBP 7501 PDF to the customs audit module
+(b2b_cbp_7501_audit_odoo) as an entry in the day's batch. Nothing more: the entry is
+not parsed or audited here, a person does that in Odoo.
+
+A CBP 3461 (Entry/Immediate Delivery) is recognised and kept here, but not sent: it is the
+release request and prints no duty or fee, so its audit could only ever end in To Review
+(user, 17 Nov 2026, replacing "3461 is the requirement" of 6 Nov).
 
 No AI: the form is recognised by what it prints, so the broker's invoices,
 arrival notices and statements sent alongside are skipped.
@@ -18,6 +22,8 @@ ENTRY = "cbp7501.entry"
 # (form, title printed on it, its OMB number or form footer)
 FORMS = (("7501", "ENTRY SUMMARY", ("1651-0022", "CBP FORM 7501")),
          ("3461", "IMMEDIATE DELIVERY", ("1651-0024", "CBP FORM 3461")))
+# Only the entry summary carries the duties and fees the audit checks.
+SENT_FORMS = ("7501",)
 _ENTRY_NUMBER = re.compile(r"\b([A-Z0-9]{3}-\d{7}-\d)\b")
 
 
@@ -56,6 +62,9 @@ class CustomsUploader:
         values = {"form": form, "entry_number": number}
         self.db.execute("UPDATE file SET doc_class = 'customs_entry', extracted = ? WHERE id = ?",
                         (json.dumps(values), file["id"]))
+        if form not in SENT_FORMS:
+            return "skipped", (f"CBP {form} entry {number or '(number not read)'}: a release request with no duty "
+                               f"or fee amounts, not sent to the customs audit."), None
         # The broker resends the same entry as a new PDF (a paperless copy): one entry per number.
         if number and self.db.execute(
                 "SELECT 1 FROM file f JOIN file_target t ON t.file_id = f.id AND t.connection_id = ? "
