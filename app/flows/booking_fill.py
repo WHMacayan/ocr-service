@@ -10,8 +10,10 @@ The documents never give these fields (freight PO study, 16-17 Nov 2026):
   else "No additional charges".
 - Freight cost: rate x containers, the total the PO will carry (the forwarder's own invoice comes weeks later).
 - House B/L: confirmed equal to the MBL when the forwarder is the carrier itself (a carrier-direct shipment).
-- Forwarder: the report's FORWARDER (QUARTZ, APEX, DEWELL), as the team's POs name it. The report is what the team
-  uploads as the PO, so a different forwarder on the papers is a conflict for a person (BKKM68473200, 17 Nov 2026).
+- Forwarder: the report's FORWARDER (QUARTZ, APEX, DEWELL), as the team's POs name it. The team copies the Booking PO,
+  booking number, forwarder and rate from the report to the Import Logsheet and makes the PO from there (Sir Nic,
+  18 Nov 2026), so the report's forwarder is the one paid; the papers' is kept in the note.
+- Booking PO: the report's PO# (P.O on the older tabs) as the Shipment Reference, the PO's Source Document.
 - ETA: the report's ETA (the team's plan) when no paper gave a US arrival; the first paper that does replaces it.
 
 Only empty fields of bookings without a freight PO are filled; every booking gets a note saying what came from
@@ -57,12 +59,14 @@ def read_details(workbook):
             invoices = [n for n in (re.sub(r"[^A-Z0-9-]", "", p.strip().upper()) for p in _SPLIT.split(str(cell("FACTORY INVOICE") or "")))
                         if len(re.sub(r"[^A-Z0-9]", "", n)) >= 6 and re.search(r"\d", n)]
             eta = cell("ETA")
+            po = next((cell(name) for name in ("PO#", "P.O", "PO", "P.O.", "PO #") if cell(name)), None)
             rows.append({"tab": ws.title, "row": row_number, "numbers": numbers, "freight": cell("FREIGHT"),
                          "fd": fd_key(cell("FD")), "invoices": invoices,
                          "factory_email": str(cell("FACTORY") or "").strip().lower(),
                          "departure": str(cell("DEPARTURE PORT") or "").strip().upper(),
                          "forwarder": " ".join(str(cell("FORWARDER") or "").upper().split()),
-                         "eta": eta.date().isoformat() if isinstance(eta, datetime) else None})
+                         "eta": eta.date().isoformat() if isinstance(eta, datetime) else None,
+                         "booking_po": " ".join(str(po).split()) if po else ""})
     return rows
 
 
@@ -93,21 +97,18 @@ def learn_forwarders(rows, orders_by_number, ocean_ids=None):
 
 
 def forwarder_check(booking, row, learned):
-    """What the report's forwarder says about the booking's: ("fill", id, name) when the booking has none, or a person
-    chose the report's on its conflict (Use new writes that name); ("conflict", held name, report's name) when they
-    differ; None when they agree or the report's name was never seen on a team PO."""
+    """The report's forwarder for the booking: ("fill", id, name) when the booking has none or another, None when they
+    agree or the report's name was never seen on a team PO. The report's is the one paid: the team copies Booking PO,
+    booking number, forwarder and rate from it to the Import Logsheet, and makes the PO from there (Sir Nic, 18 Nov
+    2026; the logsheet's forwarder is the report's on 599 of 603 bookings)."""
     found = learned.get(row.get("forwarder") or "")
     if not found:
         return None
     partner, name = found
     held = booking.get("forwarder_id")
-    if not held:
-        return "fill", partner, name
-    if held[0] == partner:
+    if held and held[0] == partner:
         return None
-    if (booking.get("forwarder_name") or "") == name:
-        return "fill", partner, name
-    return "conflict", held[1], name
+    return "fill", partner, name
 
 
 def settle_report_conflicts(odoo, booking_id):
@@ -186,7 +187,7 @@ def fill(odoo, mappings, rows, apply=False):
                                 ["booking_number", "master_bl", "warehouse_id", "cost_per_container", "factory_id",
                                  "forwarder_id", "additional_charges", "no_additional_charges", "freight_cost",
                                  "house_bl", "house_bl_assumed", "house_bl_confirmed", "invoice_ids", "state",
-                                 "forwarder_name", "etd", "eta", "port_of_loading"])
+                                 "forwarder_name", "etd", "eta", "port_of_loading", "shipment_reference"])
     index = defaultdict(list)
     for b in bookings:
         for value in (b["booking_number"], b["master_bl"]):
@@ -248,20 +249,17 @@ def fill(odoo, mappings, rows, apply=False):
                     updates["factory_id"] = mapping["partner_id"]
                     filled.append(("Factory", mapping["partner_name"], f"{where} Factory {row['factory_email']}"))
             check = forwarder_check(b, row, history.forwarder_by_code)
-            if apply and b["forwarder_id"] and (not check or check[0] == "fill"):
-                settle_report_conflicts(odoo, b["id"])
-            if check and check[0] == "fill":
+            if check:
                 updates.update(forwarder_id=check[1], forwarder_name=check[2])
+                was = f"; the papers named {b['forwarder_id'][1]}" if b["forwarder_id"] else ""
                 b["forwarder_id"] = [check[1], check[2]]
-                filled.append(("Forwarder", check[2], f"{where} FORWARDER {row['forwarder']}"))
-            elif check:
-                summary["Forwarder differs from the Booking Report"] += 1
-                if apply and not odoo.call(CONFLICT, "search_count", [("booking_id", "=", b["id"]),
-                                                                       ("field_name", "=", "forwarder_name"),
-                                                                       ("new_value", "=", check[2])]):
-                    odoo.create(CONFLICT, {"booking_id": b["id"], "field_name": "forwarder_name",
-                                           "field_label": "Forwarder Name", "existing_value": check[1],
-                                           "new_value": check[2], "source": f"{where} FORWARDER {row['forwarder']}"})
+                filled.append(("Forwarder", check[2], f"{where} FORWARDER {row['forwarder']}{was}"))
+            if apply and b["forwarder_id"]:
+                settle_report_conflicts(odoo, b["id"])  # conflicts the report opened before 18 Nov
+            if row.get("booking_po") and not b["shipment_reference"]:
+                # The team's Booking PO, the Source Document on its freight POs (327 of 331 that have one).
+                updates.update(shipment_reference=row["booking_po"], shipment_reference_source=where)
+                filled.append(("Booking PO", row["booking_po"], where))
             if not b["eta"] and row.get("eta"):
                 try:
                     days = (date.fromisoformat(row["eta"]) - date.fromisoformat(str(b["etd"])[:10])).days if b["etd"] else None

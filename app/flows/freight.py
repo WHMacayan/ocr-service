@@ -194,6 +194,31 @@ def is_container_number(text):
     return bool(_CONTAINER_NUMBER.fullmatch(normalize_identifier(text) or ""))
 
 
+# How the team writes B/L numbers on its POs (scorecard against 209 team POs, 17 Nov 2026):
+# KLN prints its house bills with its code in front (KFUNA2611310408); the team writes A2611310408.
+_HOUSE_PREFIX = re.compile(r"^KFUN(?=A\d{8,}$)")
+# The forwarders' own house bills, in their file names: De Well's drafts "HBL#SBKKS0027412", Tianshi's cargo receipts
+# THSE26100423 (Thailand) and VNSE26110149 (Vietnam). The team's POs carry them as the HBL (SBKKS 2,625, THSE 1,811,
+# VNSE 202 of 15,763 freight POs).
+_HOUSE_IN_NAME = re.compile(r"HBL#\s*([A-Z0-9]{8,20})|(?<![A-Z0-9])((?:THSE|VNSE)\d{8})(?!\d)", re.I)
+# Tianshi's cargo receipt names its booking: DRAFT-13204963-THSE26100423_TS FCR (DFCR).PDF.
+_BOOKING_IN_NAME = re.compile(r"^DRAFT-([A-Z0-9]{8,14})-(?:THSE|VNSE)\d{8}", re.I)
+
+
+def clean_bl(number):
+    """A B/L number as the team writes it: KLN's code dropped from its house bill, and a Hapag bill's last O or S read
+    as the 0 or 5 it is (none of 7,288 Hapag B/Ls on the team's POs ends in O or S; five bookings had one)."""
+    number = _HOUSE_PREFIX.sub("", normalize_identifier(number))
+    if number.startswith("HLCU") and len(number) >= 14 and number[-1] in "OS":
+        number = number[:-1] + {"O": "0", "S": "5"}[number[-1]]
+    return number
+
+
+def house_bill_in_name(name):
+    found = _HOUSE_IN_NAME.search(name or "")
+    return normalize_identifier(found.group(1) or found.group(2)) if found else ""
+
+
 def swapped_date(a, b, days=10):
     """Whether date ``b`` is a date near ``a`` with its day and month read the other way round: 2026-08-10 for
     8 October beside 7 October (Tianshi's day-first cargo receipts moved an ETD two months back, Nov 2026)."""
@@ -458,6 +483,18 @@ class Booker:
         if values.get("containers") and not all(valid_container_number(c) for c in values["containers"]):
             values = dict(values, containers=[c for c in values["containers"] if valid_container_number(c)])
             doc = dict(doc, values=values)
+        # B/L numbers as the team writes them, and what a forwarder's file name states: its house bill (De Well's
+        # HBL#, Tianshi's THSE/VNSE) and, on Tianshi's cargo receipt, the booking.
+        cleaned = {k: clean_bl(values[k]) for k in ("master_bl", "house_bl", "bl_number") if values.get(k)}
+        name = doc.get("source") or ""
+        if doc["doc_class"] in TRUSTED["bl"] and not values.get("house_bl") and house_bill_in_name(name):
+            cleaned["house_bl"] = house_bill_in_name(name)
+        named = _BOOKING_IN_NAME.match(name)
+        if named and not values.get("booking_number"):
+            cleaned["booking_number"] = normalize_identifier(named.group(1))
+        if any(values.get(k) != v for k, v in cleaned.items()):
+            values = dict(values, **cleaned)
+            doc = dict(doc, values=values)
         factory_doc = doc["doc_class"] in FACTORY_DOCS
         if factory_doc and values.get("bl_number") and not values.get("booking_number"):
             # Sentury prints the booking number as "B/L#": 96 of 96 invoices checked against the Import
@@ -640,6 +677,12 @@ class _Consolidation:
         if "email_schedule" in trusted:
             for name in ("etd", "eta"):
                 self.set(name, self.values.get(name))
+        if kind == "freight_invoice" and self.values.get("eta") and not self.current("eta") and self.from_forwarder():
+            # The carrier's or forwarder's own invoice prints the arrival (Hapag's on 40%); a trucker's or a customs
+            # broker's prints its own dates, so only the booking's forwarder fills an ETA none of the papers gave.
+            pod = self.values.get("port_of_discharge")
+            if not pod or is_destination_port(pod) or is_inland_point(pod):
+                self.set("eta", self.values["eta"])
         if "bl" in trusted:
             invoices = {normalize_identifier(i) for i in self.values.get("invoices") or []}
             stem = normalize_identifier(re.sub(r"\.[A-Z0-9]{2,4}$", "", (self.doc.get("source") or "").upper().strip()))
@@ -653,9 +696,14 @@ class _Consolidation:
                     number = ""  # a container number read where the bill of lading number goes
                 if number in invoices or _INVOICE_NUMBER.match(number):
                     number = ""  # a factory invoice number (F26AR10THA0693, GRKA-P-2026436) is never a B/L
+                if name == "master_bl" and number.isdigit() and number == normalize_identifier(
+                        self.current("booking_number") or self.values.get("booking_number")):
+                    number = ""  # the bare booking number: the MBL on 35 of 15,763 team POs only (13204963)
                 self.set(name, number)
                 self.add_bl(bl_type, number)
         for role in ("forwarder", "factory"):
+            if role == "forwarder" and self.booking.get("purchase_order_id"):
+                continue  # the team's PO is linked: its vendor is the one paid (a trucker's invoice made 31652425 Mentfield)
             if role in trusted:
                 self.set_party(role, self.values.get(f"{role}_name"))
         invoice_ids = {}
@@ -681,6 +729,16 @@ class _Consolidation:
         self.link_existing_po()
         for note in self.notes:
             self.odoo.call(BOOKING, "message_post", [self.id], body=note)
+
+    def from_forwarder(self):
+        """Whether this paper is the booking's own forwarder's (or carrier's): by its sender or its printed name."""
+        held = self.current("forwarder_id")
+        held = held[0] if isinstance(held, list) else held
+        if not held:
+            return False
+        sender = resolve_mapping(self.booker.mappings, "forwarder", sender_domain=(self.doc["sender"] or "").rpartition("@")[2])
+        printed = resolve_mapping(self.booker.mappings, "forwarder", name=self.values.get("forwarder_name") or "")
+        return any(m is not None and m["partner_id"] == held for m in (sender, printed))
 
     def check_eta(self):
         """An ETA too soon after the ETD is a stop on the way, or a date the sailing has since moved past (14546118
@@ -747,10 +805,19 @@ class _Consolidation:
         if name in ("etd", "eta"):
             value = plausible_date(name, parse_date(value), self.doc["received"]) or ""
             if name == "eta" and value:
-                etd = (plausible_date("etd", parse_date(self.values.get("etd")), self.doc["received"])
-                       or self.current("etd"))
-                if etd and value <= str(etd)[:10]:
-                    return  # arriving the day it sails or before: another date read as the ETA
+                # The paper's own ETD, except an arrival notice's (its "ETD" is the arrival), and the booking's.
+                own = None if self.doc["doc_class"] == "shipping_notice" else plausible_date(
+                    "etd", parse_date(self.values.get("etd")), self.doc["received"])
+                least = min_sea_days(self.values.get("port_of_loading") or self.current("port_of_loading"))
+                for etd in {str(d)[:10] for d in (own, self.current("etd")) if d}:
+                    try:
+                        days = (date.fromisoformat(value[:10]) - date.fromisoformat(etd)).days
+                    except ValueError:
+                        continue
+                    if days < least:
+                        # Too soon after sailing to be the arrival (a feeder leg, another date): it never replaces
+                        # the ETA held (97851501 lost 8 Nov to Hapag's 2-day feeder date, 17 Nov 2026).
+                        return
         else:
             value = str(value or "").strip()
             if name == "vessel" and value and not plausible_vessel(value):
@@ -838,8 +905,11 @@ class _Consolidation:
                     return
             if CARRIER.search(value) and not CARRIER.search(old):
                 return  # the carrier's own document names the carrier; the forwarder stays
-            # Only a mapped forwarder replaces a carrier: an unmapped name may be a shipper misread as forwarder.
+            # Only a mapped forwarder replaces a carrier: an unmapped name may be a shipper misread as forwarder. Its own
+            # house bill does (De Well's drafts); an invoice does not: the two that did were a trucker's (Canary Yellow
+            # on Hapag shipments, 17 Nov 2026).
             if CARRIER.search(old) and not CARRIER.search(value) and not email \
+                    and self.doc["doc_class"] != "freight_invoice" \
                     and resolve_mapping(self.booker.mappings, "forwarder", name=value):
                 self.take_value(name, value)
                 self.replaced.add("forwarder")
@@ -858,6 +928,10 @@ class _Consolidation:
                 and self.booker.newest_confirmation(self.doc, self.id):
             self.take_value(name, value)
             self.notes.append(f"{label} updated from {old} to {value} by {self.source}.")
+            return
+        if name == "forwarder_name":
+            # The forwarder paid is the Booking Report's (the hourly fill sets it): a paper naming another is a note.
+            self.notes.append(f"{self.source} names the forwarder {value}; the booking keeps {old}.")
             return
         if not email:  # an email never disputes a document
             self.conflict(name, old, value)
@@ -986,17 +1060,20 @@ class _Consolidation:
     def add_invoices(self, numbers):
         """``{number: invoice line id}`` for the factory invoices ``numbers``, the new ones added with the
         seller as printed (the key is seller + invoice number)."""
-        lines = {line["invoice_number"]: line["id"] for line in self.odoo.search_read(
+        # One invoice however it is written: the Booking Report's GRKA-P-2026497 is the load plan's GRKAP2026497
+        # (EBKG19094541 got both, the second without containers, 17 Nov 2026). The line keeps its first spelling.
+        lines = {normalize_identifier(line["invoice_number"]): line["id"] for line in self.odoo.search_read(
             INVOICE, [("booking_id", "=", self.id)], ["invoice_number"])}
         seller = self.values.get("factory_name") if self.doc["doc_class"] == "commercial_invoice" else None
         out = {}
         for number in numbers:
-            if number not in lines:
+            key = normalize_identifier(number)
+            if key not in lines:
                 values = {"booking_id": self.id, "invoice_number": number, "source": self.source}
                 if seller and self.booker.has_field(INVOICE, "factory_name"):
                     values["factory_name"] = seller
-                lines[number] = self.odoo.create(INVOICE, values)
-            out[number] = lines[number]
+                lines[key] = self.odoo.create(INVOICE, values)
+            out[number] = lines[key]
         return out
 
     def set_amounts(self):
