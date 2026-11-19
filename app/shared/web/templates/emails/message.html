@@ -1,0 +1,160 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% set title = message.subject or "Email" %}
+{% set split = true %}
+{% block content %}
+<div class="split has-detail">
+  {% include "emails/_email_list.html" %}
+  <section class="pane pane-detail" id="detail" aria-labelledby="detail-title">
+  <div class="detail" id="email-detail" data-live>
+    <a class="back-link" href="{{ url_for('web.messages', **filters) }}">{{ icon("back") }} Emails</a>
+    <div class="o-form-header">
+      <form class="actions" method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn {{ '' if message.state in ('failed', 'review') else 'secondary' }}">{{ icon("rotate") }} Process again</button>
+      </form>
+      <ol class="o-statusbar" aria-label="State">
+        {% for s in route %}<li {% if message.state == s %}aria-current="step"{% endif %}>{{ state_labels[s] }}</li>{% endfor %}
+        {% if message.state in off_route %}<li aria-current="step" class="off-{{ message.state }}">{{ state_labels[message.state] }}</li>{% endif %}
+      </ol>
+    </div>
+    <div class="o-sheet">
+    <header class="detail-head">
+      <div class="detail-meta">{{ message.mailbox_name }} · {{ message.sender }} · {{ message.received|when or "Received date unknown" }}</div>
+      <div class="detail-title">
+        <h2 id="detail-title" tabindex="-1">{{ message.subject or "No subject" }}</h2>
+      </div>
+    </header>
+
+    {% if message.note %}
+    <div class="callout {{ 'bad' if message.state == 'failed' else 'warn' }}">{{ icon("alert") }}<span>{{ message.note }}</span></div>
+    {% endif %}
+
+    <section class="card kv-card">
+      <h2>Summary</h2>
+      <dl class="kv">
+        <div class="kv-row"><dt>Files</dt><dd>{{ files|length }}</dd></div>
+        <div class="kv-row"><dt>Records in Odoo</dt><dd>{{ (written.records|length) if written else 0 }}</dd></div>
+        <div class="kv-row"><dt>Attempts</dt><dd>{{ message.attempts }}</dd></div>
+        <div class="kv-row"><dt>Created</dt><dd>{{ message.created_at|when or "–" }}</dd></div>
+        <div class="kv-row"><dt>Last modified</dt><dd>{{ message.updated_at|when or "–" }}</dd></div>
+      </dl>
+    </section>
+
+    {% set copies = thread|sum(attribute="copies", start=[]) %}
+    {% if copies|length > 1 %}
+    {% set mailboxes = copies|map(attribute="mailbox_name")|unique|list %}
+    <section class="block">
+      <h3>Conversation</h3>
+      <p class="block-help">{{ thread|length }} email{{ "s" if thread|length != 1 }} in this thread, oldest first{% if mailboxes|length > 1 %}, read by {{ mailboxes[:-1]|join(", ") }} and {{ mailboxes[-1] }}{% endif %}. Open any copy to see what it did.</p>
+      <ol class="thread">
+        {% for email in thread %}
+        {% set here = email.copies|selectattr("id", "equalto", message.id)|list %}
+        <li class="thread-node {{ 'here' if here }}">
+          <span class="thread-dot"></span>
+          <div class="thread-body">
+            <div class="thread-top"><b class="clip-1">{{ email.sender or "Unknown sender" }}</b>
+              <span class="faint">{{ email.received|when(short=True) }}</span></div>
+            {% if email.subject != message.subject %}<div class="row-sub clip-1">{{ email.subject or "No subject" }}</div>{% endif %}
+            <div class="thread-copies">
+              {% for c in email.copies %}
+              <a class="copy-chip" href="{{ url_for('web.message', message_id=c.id, **filters) }}" {% if c.id == message.id %}aria-current="true"{% endif %}>
+                <span class="state-dot c-{{ c.state }}"></span>{{ c.mailbox_name }} · {{ state_labels.get(c.state, c.state) }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+
+    {% if targets %}
+    <section class="block">
+      <h3>Per Odoo connection</h3>
+      <p class="block-help">Where this email stands in each Odoo it is written to. A failure in one is retried there alone.</p>
+      <ul class="rows">
+        {% for t in targets %}
+        <li>
+          <span class="row-main">
+            <span class="row-name"><b>{{ t.name }}</b>
+              {% if t.is_production %}<span class="badge failed">Production</span>{% endif %}
+              {% if not t.active %}<span class="faint">Off</span>{% endif %}</span>
+            {% if t.note %}<span class="row-sub">{{ t.note }}</span>{% endif %}</span>
+          <span class="row-end">
+            <span class="faint">{{ t.attempts or 0 }} attempt{{ "s" if (t.attempts or 0) != 1 }}</span>
+            <span class="badge {{ t.state or 'new' }}">{{ state_labels.get(t.state or "new", t.state) }}</span>
+            {% if t.state and t.state != "new" %}
+            <form method="post" action="{{ url_for('web.retry', message_id=message.id, **filters) }}">
+              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="connection_id" value="{{ t.id }}">
+              <button class="btn ghost sm">{{ icon("rotate") }} Again here</button></form>
+            {% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="block">
+      <h3>In Odoo</h3>
+      <p class="block-help">What this email created or changed in Odoo. Open a record to check it against the email.</p>
+      {% if written and written.records %}<div class="chip-line">{% for r in written.records %}
+        <a class="odoo-chip {{ r.action }}" {% if r.model == 'b2b.ocr.booking' %}href="{{ url_for('web.booking', booking_id=r.id) }}"{% else %}href="{{ r.link or '#' }}" target="_blank" rel="noopener noreferrer"{% endif %}>
+          <b>{{ r.kind }}</b> {{ r.label }} <span>{{ r.action }}</span></a>{% endfor %}</div>{% endif %}
+      {% if changes %}
+      <ul class="rows">
+        {% for c in changes %}
+        <li>
+          <span class="row-main">
+            {% if c.link %}<a class="primary" href="{{ c.link }}" target="_blank" rel="noopener noreferrer">{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }} {{ icon("external") }}</a>
+            {% else %}<b>{{ model_names.get(c.model, c.model)|capitalize }} {{ c.label or "#" ~ c.record_id }}</b>{% endif %}
+            <span class="row-sub">{% if c.connection_name %}{{ c.connection_name }} · {% endif %}Odoo ID {{ c.record_id }} · from {{ c.filename or "the email text" }} · {{ c.at|when(short=True) }}</span>
+            {% if c.detail %}<details class="detail-fold" id="change-{{ c.id }}"><summary>Fields written</summary><pre class="block">{{ c.detail }}</pre></details>{% endif %}
+          </span>
+          <span class="badge {{ 'ok' if c.action == 'created' else ('failed' if c.action == 'deleted' else '') }} change-action">{{ c.action }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif written and written.records %}
+      <p class="faint">Processed before changes were recorded per email: its files point to the record above, but not which fields were written.</p>
+      {% elif message.state in ("done", "skipped") and message.processed_at %}
+      <p class="faint">Nothing was written to Odoo: this email had no booking or invoice facts that needed a change.</p>
+      {% elif message.state in ("done", "skipped") %}
+      <p class="faint">Not recorded: this email was processed before the service kept a record of its Odoo changes.
+        Press <b>Process again</b> to see what it changes in Odoo; the files' earlier readings are reused, so the AI is not asked again.</p>
+      {% else %}
+      <p class="faint">Nothing written to Odoo yet. The email is {{ state_labels.get(message.state, message.state)|lower }}.</p>
+      {% endif %}
+    </section>
+
+    <section class="block">
+      <h3>Files</h3>
+      {% if files %}
+      <ul class="rows">
+        {% for f in files %}
+        <li>
+          <span class="file-icon">{{ icon("file") }}</span>
+          <span class="row-main"><b class="clip-1">{{ f.filename }}</b>
+            <span class="row-sub">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }}{% if f.odoo_id %} · Odoo ID {{ f.odoo_id }}{% endif %}{% if f.note %} · {{ f.note }}{% endif %}</span>
+            {% if f.created_at %}<span class="row-sub">Created {{ f.created_at|when }}{% if f.updated_at and f.updated_at != f.created_at %} · Last modified {{ f.updated_at|when }}{% endif %}</span>{% endif %}</span>
+          <span class="badge {{ f.state }}">{{ {"new": "Queued", "waiting": "Waiting for booking"}.get(f.state, f.state|capitalize) }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="faint">This email has no saved files.</p>
+      {% endif %}
+    </section>
+
+    {% if message.skipped_attachments %}
+    <details class="block fold" id="skipped-attachments"><summary>Attachments not saved</summary><pre class="block">{{ message.skipped_attachments }}</pre></details>
+    {% endif %}
+    {% if message.body_text %}
+    <details class="block fold" id="email-text"><summary>Email text</summary><pre class="block">{{ message.body_text }}</pre></details>
+    {% endif %}
+    </div>
+  </div>
+  </section>
+</div>
+{% endblock %}

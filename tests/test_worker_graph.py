@@ -2,9 +2,9 @@ from datetime import datetime
 
 import requests
 
-from app import store
-from app.graph import Graph
-from app.worker import is_due
+from app.shared.core import store
+from app.shared.mail.graph import Graph
+from app.shared.worker import is_due
 
 from fakes import mailbox
 
@@ -86,7 +86,7 @@ def test_outlook_busy_waits_as_asked_then_retries(db):
 
 
 def test_email_outcomes_are_logged_once(db):
-    from app.worker import log_outcomes
+    from app.shared.worker import log_outcomes
     box = mailbox(db)
     with db:
         db.execute("INSERT INTO message (id, mailbox_id, dedupe_key, subject, state, note) "

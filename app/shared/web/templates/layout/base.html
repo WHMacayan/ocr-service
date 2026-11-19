@@ -1,0 +1,110 @@
+{% from "layout/_icons.html" import icon %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>{% if title %}{{ title }} · {% endif %}OCR Service</title>
+  <script src="{{ url_for('static', filename='js/theme.js') }}?v=12"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=39">
+</head>
+<body>
+{% set here = request.path %}
+
+{% if session.signed_in %}
+{% set setup_here = here.startswith('/settings') or here.startswith('/connections') or here.startswith('/password')
+                    or forms.keys()|select("in", [here.split('/')[1]])|list %}
+<div class="shell">
+  {# Odoo-style top bar: app switcher, app name, menus; search, theme and the user on the right. #}
+  <nav class="o-navbar" id="rail" aria-label="Main">
+    <button class="o-nav-btn o-burger" type="button" data-menu aria-controls="o-menus" aria-expanded="false" aria-label="Menu">{{ icon("menu") }}</button>
+    <a class="o-brand" href="{{ url_for('web.messages') }}"><span class="o-brand-mark">{{ icon("scan") }}</span>OCR Service</a>
+    <div class="o-menus" id="o-menus">
+      <a href="{{ url_for('web.messages') }}" {% if here.startswith('/messages') %}aria-current="page"{% endif %}>Emails
+        <span class="o-count" id="rail-failed" data-live title="Failed emails" {% if not failed_count %}hidden{% endif %}>{{ failed_count }}</span></a>
+      {# Each job's own entries (its Job's menu, app/<job>/__init__.py). #}
+      {% for item in job_menu %}<a href="{{ url_for(item.endpoint) }}" {% if here.startswith(item.prefix) %}aria-current="page"{% endif %}>{{ item.label }}</a>
+      {% endfor %}
+      <a href="{{ url_for('web.activity') }}" {% if here.startswith('/activity') %}aria-current="page"{% endif %}>Activity</a>
+      <details class="o-dropdown">
+        <summary {% if setup_here %}aria-current="page"{% endif %}>Configuration</summary>
+        <div class="o-dropdown-menu">
+          {% for key, f in forms.items() %}<a href="{{ url_for('web.records', key=key) }}">{{ f.title }}</a>{% endfor %}
+          <a href="{{ url_for('web.settings') }}">Settings</a>
+          <a href="{{ url_for('web.import_export') }}">Import / Export</a>
+        </div>
+      </details>
+    </div>
+    <div class="o-systray">
+      <button class="o-nav-btn" type="button" data-search-open aria-label="Search (Ctrl K)" title="Search (Ctrl K)">{{ icon("search") }}</button>
+      <button class="o-nav-btn" type="button" data-theme-toggle>
+        <span class="theme-icon" data-theme-icon="system">{{ icon("monitor") }}</span>
+        <span class="theme-icon" data-theme-icon="light">{{ icon("sun") }}</span>
+        <span class="theme-icon" data-theme-icon="dark">{{ icon("moon") }}</span>
+        <span class="visually-hidden" data-theme-label>Theme: match Windows</span></button>
+      <details class="o-dropdown o-user">
+        <summary aria-label="Account"><span class="o-avatar">A</span><span class="o-user-name">Administrator</span></summary>
+        <div class="o-dropdown-menu right">
+          <span class="o-dropdown-head">Admin</span>
+          <a href="{{ url_for('web.change_password') }}">Change password</a>
+          <form method="post" action="{{ url_for('web.logout') }}" data-full>
+            <input type="hidden" name="csrf" value="{{ csrf }}"><button>Log out</button></form>
+        </div>
+      </details>
+    </div>
+  </nav>
+
+  <main class="main {{ 'is-split' if split else '' }} {{ 'is-fill' if fill else '' }}" id="main">
+    {% set production_on = connections_on|selectattr("is_production")|list %}
+    {% set others_on = connections_on|rejectattr("is_production")|list %}
+    {% if connections_on %}
+    <a class="env-bar {{ 'prod' if production_on else '' }}" href="{{ url_for('web.settings') }}">
+      <span class="env-dot"></span>
+      {% if production_on %}<b>Writing to PRODUCTION: {{ production_on|map(attribute="name")|join(", ") }}</b>{% endif %}
+      {% if others_on %}<span>{{ "Also writing to" if production_on else "Writing to" }} {{ others_on|map(attribute="name")|join(", ") }}</span>{% endif %}
+    </a>
+    {% else %}
+    <a class="env-bar off" href="{{ url_for('web.settings') }}"><span class="env-dot"></span><span>No Odoo connection is on: nothing is written to Odoo</span></a>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<div class="palette" id="palette" hidden>
+  <div class="palette-box" role="dialog" aria-modal="true" aria-label="Search everything">
+    <form class="palette-input" action="{{ url_for('web.search_page') }}" method="get" role="search">
+      {{ icon("search") }}
+      <input id="palette-q" name="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Search emails, booking or container numbers, vendors, settings…"
+             role="combobox" aria-expanded="true" aria-controls="palette-results" aria-autocomplete="list">
+      <kbd>Esc</kbd>
+    </form>
+    <div class="palette-results" id="palette-results" role="listbox" aria-label="Results"></div>
+    <div id="palette-icons" hidden>
+      {% for name in ("inbox", "mail", "users", "type", "sliders", "activity", "chevron") %}<span data-icon="{{ name }}" class="p-icon">{{ icon(name) }}</span>{% endfor %}
+    </div>
+    <div class="palette-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open</span>
+      <span class="hint">Try <code>state:failed</code> <code>from:maersk.com</code> <code>"exact phrase"</code></span>
+    </div>
+  </div>
+</div>
+<div class="progress" id="progress" aria-hidden="true"></div>
+{% endif %}
+{% if not session.signed_in %}
+  {% block bare %}{% endblock %}
+{% endif %}
+
+<div class="toasts" id="toasts" aria-live="polite">
+  {% for category, text in get_flashed_messages(with_categories=true) %}
+  <div class="toast {{ 'error' if category == 'error' else '' }}" role="{{ 'alert' if category == 'error' else 'status' }}">
+    <span class="t-icon">{{ icon("alert" if category == "error" else "check") }}</span>
+    <span>{{ text }}</span>
+    <button type="button" aria-label="Dismiss" data-dismiss>{{ icon("x") }}</button>
+  </div>
+  {% endfor %}
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}?v=20"></script>
+</body>
+</html>

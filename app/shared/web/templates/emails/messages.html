@@ -1,0 +1,29 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% set title = "Emails" %}
+{% set split = true %}
+{% block content %}
+<div class="split">
+  {% include "emails/_email_list.html" %}
+  <section class="pane pane-detail" id="detail" aria-label="Email">
+    <div class="detail-empty">
+      <div class="empty-icon">{{ icon("inbox") }}</div>
+      {% if total %}
+      <h2>Pick an email</h2>
+      <p>Its files, what was read and what went to each Odoo open here. Use <kbd>↑</kbd> <kbd>↓</kbd> to move through the list.</p>
+      {% elif mailboxes %}
+      <h2>No emails read yet</h2>
+      <p>Emails appear here once a connected mailbox has been read. Check that the mailbox is connected to Outlook.</p>
+      <div class="actions"><a class="btn" href="{{ url_for('web.records', key='mailboxes') }}">Open mailboxes</a></div>
+      {% else %}
+      <h2>Start by adding a mailbox</h2>
+      <p>Fill in the Odoo connection under Settings, then add the Outlook mailbox the service should read.</p>
+      <div class="actions">
+        <a class="btn secondary" href="{{ url_for('web.settings') }}">Open settings</a>
+        <a class="btn" href="{{ url_for('web.record', key='mailboxes') }}">{{ icon("plus") }} Add mailbox</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+"""The Freight Payables loop: read every due Freight Payables mailbox, sleep.
+
+It runs as its own process (the payables-worker service), so a slow payables run never
+delays the booking, bill and customs mailboxes, and it needs no Odoo connection.
+"""
+
+import logging
+import time
+
+from app.shared.core import store
+from app.shared.odoo.client import utc_now
+from app.payables import PURPOSE as PAYABLES
+from app.shared.worker import DEFAULT_POLL_SECONDS, is_due
+from app.payables.graph import PayablesGraph
+from app.payables.ingest import PayablesSync
+
+_logger = logging.getLogger(__name__)
+
+# The booking pipeline keeps the write lock while it waits for the AI; wait for it rather than fail.
+BUSY_TIMEOUT_MS = 120_000
+
+
+def connect():
+    db = store.connect()
+    db.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    return db
+
+
+def _reader():
+    return PayablesSync, PayablesGraph
+
+
+def read_payables(db, now=None, sync_class=None):
+    """One pass over the due Freight Payables mailboxes. A failing mailbox never stops the others."""
+    now = now or utc_now()
+    default_sync, graph_class = _reader()
+    sync_class = sync_class or default_sync
+    for mailbox in store.active_mailboxes(db):
+        if mailbox["purpose"] != PAYABLES or not is_due(mailbox, now):
+            continue
+        try:
+            def save_tokens(values, mailbox_id=mailbox["id"]):
+                store.update_mailbox(db, mailbox_id, values)
+            sync_class(db, graph_class(mailbox, save_tokens), mailbox).run()
+        except Exception:
+            _logger.exception("Freight Payables mailbox %s (%s) failed", mailbox["id"], mailbox["name"])
+
+
+def run_payables_once(db, sync_class=None):
+    read_payables(db, sync_class=sync_class)
+
+
+def run_payables_forever():
+    db = connect()
+    while True:
+        try:
+            run_payables_once(db)
+        except Exception:
+            _logger.exception("Freight Payables pass failed; trying again after the pause")
+        time.sleep(store.get_setting(db, "poll_seconds", int) or DEFAULT_POLL_SECONDS)

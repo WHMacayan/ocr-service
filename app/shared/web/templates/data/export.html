@@ -1,0 +1,52 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel %}
+{% set kinds = {"char": "Text", "text": "Long text", "int": "Whole number", "float": "Number", "bool": "Yes / No", "date": "Date",
+                "datetime": "Date and time", "select": "Choice", "many2one": "Related record", "list": "List"} %}
+{% block content %}
+<div class="page">
+{{ control_panel("Export " ~ ds.label|lower, crumbs=[(ds.label, list_url)],
+                 intro="Pick the fields to export, then press Export. The file has one row per record and one column for each field, in the order listed here."
+                       ~ (" It holds what the list you came from was showing." if filters else ""),
+                 search={"filter": "#fields", "placeholder": "Filter the fields"} if columns else None) }}
+
+{% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+
+{% if columns %}
+<form method="post" action="{{ url_for('web.data_export', key=ds.key, **filters) }}" data-full>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="actions" style="margin-bottom:14px">
+    <span class="faint">Pick:</span>
+    <a class="btn secondary" href="{{ url_for('web.data_export', key=ds.key, preset='all', **filters) }}" data-full>All fields</a>
+    <a class="btn secondary" href="{{ url_for('web.data_export', key=ds.key, preset='none', **filters) }}" data-full>None</a>
+    <a class="btn secondary" href="{{ url_for('web.data_export', key=ds.key, preset='defaults', **filters) }}" data-full>The list's columns</a>
+    <a class="btn secondary" href="{{ url_for('web.data_export', key=ds.key, **filters) }}" data-full>Last used</a>
+  </div>
+  <div class="card table-card">
+    <table class="data" id="fields">
+      <thead><tr><th style="width:90px">Export</th><th>Field</th><th>Kind</th>{% if ds.importable %}<th>In an import</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for c in columns %}
+      <tr>
+        <td data-label="Export"><input type="checkbox" name="f_{{ c.name }}" id="f_{{ c.name }}" {% if c.name in chosen %}checked{% endif %}></td>
+        <td class="cell-main"><label class="primary" for="f_{{ c.name }}">{{ c.label }}</label>{% if c.note %}<span class="sub">{{ c.note }}</span>{% endif %}</td>
+        <td data-label="Kind">{{ kinds.get(c.kind, c.kind) }}</td>
+        {% if ds.importable %}<td data-label="In an import">{% if c.name == "id" %}<span class="faint">Tells which record</span>{% elif c.importable %}Yes{% else %}<span class="faint">Export only</span>{% endif %}</td>{% endif %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="table-foot" data-filter-empty hidden>No field matches the filter.</div>
+  </div>
+  <div class="actions" style="margin-top:18px">
+    <label><input type="radio" name="format" value="xlsx" checked> Excel (.xlsx)</label>
+    <label><input type="radio" name="format" value="csv"> CSV</label>
+    <button class="btn" name="action" value="export">{{ icon("file") }} Export</button>
+    <a class="btn secondary" href="{{ list_url }}" data-full>Back to the list</a>
+    {% if ds.importable %}<a class="btn secondary" href="{{ url_for('web.data_import', key=ds.key) }}" data-full>Import into this list</a>{% endif %}
+  </div>
+  {% if ds.importable %}<p class="faint" style="margin-top:10px">To change records with a file, export with <b>ID</b> ticked, edit the file, then import it back: the ID tells which record each row is.</p>{% endif %}
+</form>
+{% endif %}
+</div>
+{% endblock %}
