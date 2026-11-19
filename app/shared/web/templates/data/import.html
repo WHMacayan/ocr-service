@@ -1,0 +1,130 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel %}
+{% set action_badges = {"create": ("done", "Add"), "update": ("review", "Update"), "unchanged": ("skipped", "No change"), "error": ("failed", "Problem")} %}
+{% block content %}
+<div class="page">
+{{ control_panel("Import " ~ ds.label|lower, crumbs=[(ds.label, list_url)],
+                 intro="Upload an Excel or CSV file, say which column is which field, test it, then import it. Nothing changes until you press Import.") }}
+
+{% if error %}<div class="callout warn" style="margin-bottom:20px">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+
+{% if step == "upload" %}
+<section class="card">
+  <div class="card-head"><div><h2>1. Choose a file</h2>
+    <p>One row per {{ ds.singular }}.
+      {% if ds.creatable %}Leave the ID empty to add a new {{ ds.singular }}; fill it to update one.
+      {% else %}Every row needs the ID of the {{ ds.singular }} to update (this list does not add records).{% endif %}
+      An empty cell leaves that field as it is.</p></div></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('web.data_import', key=ds.key) }}" enctype="multipart/form-data" class="actions" data-full>
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="upload">
+      <input type="file" name="file" accept=".xlsx,.xlsm,.csv" required aria-label="File to import">
+      <button class="btn">{{ icon("file") }} Upload</button>
+    </form>
+    <p class="faint" style="margin-top:14px">No file yet? Download a
+      <a href="{{ url_for('web.data_template', key=ds.key) }}" data-full>template (Excel)</a> or
+      <a href="{{ url_for('web.data_template', key=ds.key, format='csv') }}" data-full>(CSV)</a> with the columns an import takes,
+      or <a href="{{ url_for('web.data_export', key=ds.key) }}" data-full>export the records</a> with the ID ticked and edit that.</p>
+  </div>
+</section>
+
+{% elif step == "map" %}
+{% if writes_to %}
+<div class="callout {{ 'bad' if connection and connection.is_production else 'warn' }}" style="margin-bottom:20px">{{ icon("alert") }}
+  <span>Importing writes to <b>{{ writes_to }}</b>{% if connection and connection.is_production %} — <b>PRODUCTION</b>{% endif %}.</span></div>
+{% endif %}
+<form method="post" action="{{ url_for('web.data_import', key=ds.key) }}" data-full>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <section class="card">
+    <div class="card-head"><div><h2>2. Map your columns</h2>
+      <p>Each column of the file ({{ total }} row{{ "s" if total != 1 }}) goes into one field. Columns set to “Do not import” are ignored.</p></div></div>
+    <div class="card-body">
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Column in the file</th><th>First values</th><th>Import into</th></tr></thead>
+        <tbody>
+        {% for header in headers %}
+        {% set i = loop.index0 %}
+        <tr>
+          <td class="cell-main"><span class="primary">{{ header or "(no title)" }}</span></td>
+          <td data-label="First values"><span class="faint">{% for row in rows if row[i] is not none and row[i] != "" %}{{ row[i] }}{{ " · " if not loop.last }}{% endfor %}</span></td>
+          <td data-label="Import into">
+            <select name="col_{{ i }}" aria-label="Field for the column {{ header }}">
+              <option value="">Do not import</option>
+              {% for c in columns %}<option value="{{ c.name }}" {% if mapping[i] == c.name %}selected{% endif %}>{{ c.label }}{% if c.required %} *{% endif %}</option>{% endfor %}
+            </select></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <p class="faint" style="margin:10px 0 0">* needed to add a new {{ ds.singular }}.</p>
+    </div>
+  </section>
+  <div class="actions" style="margin:18px 0">
+    {% if ds.writes_to == "odoo" and connections|length > 1 %}
+    <label>Write to <select name="connection">{% for c in connections %}<option value="{{ c.id }}" {% if connection and connection.id == c.id %}selected{% endif %}>{{ c.name }}{% if c.is_production %} (PRODUCTION){% endif %}</option>{% endfor %}</select></label>
+    {% endif %}
+    <label><input type="checkbox" name="skip" {% if skip %}checked{% endif %}> Skip the rows with a problem</label>
+    <button class="btn secondary" name="action" value="test">{{ icon("check") }} Test</button>
+    <button class="btn" name="action" value="apply" {% if plan and (plan.problems or (plan.errors and not skip)) %}disabled{% endif %}>{{ icon("file") }} Import</button>
+  </div>
+</form>
+<form method="post" action="{{ url_for('web.data_import', key=ds.key) }}" data-full>
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="discard">
+  <button class="btn secondary">{{ icon("x") }} Discard this file</button>
+</form>
+
+{% if plan %}
+<section class="card" style="margin-top:20px">
+  <div class="card-head"><div><h2>Test result</h2>
+    <p>{{ plan.count("create") }} to add · {{ plan.count("update") }} to update · {{ plan.count("unchanged") }} with no change ·
+      <b>{{ plan.errors }}</b> with a problem. Nothing has been written.</p></div></div>
+  <div class="card-body">
+    {% for problem in plan.problems %}<div class="callout bad" style="margin-bottom:10px">{{ icon("alert") }}<span>{{ problem }}</span></div>{% endfor %}
+    {% if plan.rows %}
+    <div class="table-scroll"><table class="data">
+      <thead><tr><th>Row</th><th>Result</th><th>Record</th><th>What changes, or what is wrong</th></tr></thead>
+      <tbody>
+      {% for r in plan.rows[:300] %}
+      {% set badge = action_badges[r.action] %}
+      <tr>
+        <td data-label="Row"><span class="num">{{ r.number }}</span></td>
+        <td data-label="Result"><span class="badge {{ badge[0] }}">{{ badge[1] }}</span></td>
+        <td data-label="Record"><span class="primary">{{ r.label }}</span></td>
+        <td data-label="What changes">
+          {% for message in r.errors %}<div class="sub" style="color:var(--bad, #c0392b)">{{ message }}</div>{% endfor %}
+          {% for field, old, new in r.changes %}<div class="sub">{{ field }}: {{ old if old is not none else "–" }} → {{ new }}</div>{% endfor %}
+          {% if r.action == "create" %}<div class="sub">{{ r.values|length }} field{{ "s" if r.values|length != 1 }} set</div>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% if plan.rows|length > 300 %}<p class="faint">The first 300 of {{ plan.rows|length }} rows are shown; all of them are tested.</p>{% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% elif step == "result" %}
+{% set done = result.rows|selectattr("done")|list %}
+<section class="card">
+  <div class="card-head"><div><h2>Imported</h2>
+    <p>{{ done|selectattr("action", "equalto", "create")|list|length }} added · {{ done|selectattr("action", "equalto", "update")|list|length }} updated ·
+      {{ result.count("unchanged") }} with no change · {{ result.errors }} skipped.</p></div></div>
+  <div class="card-body">
+    {% if result.errors %}
+    <div class="table-scroll"><table class="data">
+      <thead><tr><th>Row</th><th>What was wrong</th></tr></thead>
+      <tbody>{% for r in result.rows if r.action == "error" %}<tr><td data-label="Row"><span class="num">{{ r.number }}</span></td><td data-label="What was wrong">{{ r.errors|join(" ") }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+    <div class="actions" style="margin-top:14px">
+      <a class="btn" href="{{ list_url }}" data-full>Back to the list</a>
+      <a class="btn secondary" href="{{ url_for('web.data_import', key=ds.key) }}" data-full>Import another file</a>
+    </div>
+  </div>
+</section>
+{% endif %}
+</div>
+{% endblock %}

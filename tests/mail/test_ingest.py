@@ -1,8 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 
-from app.core import store
-from app.mail.ingest import MailboxSync, dedupe_key, window_days, window_filter
+from app.shared.core import store
+from app.shared.mail.ingest import MailboxSync, dedupe_key, window_days, window_filter
 
 from fakes import PDF, FakeGraph, attachment, mailbox, message
 

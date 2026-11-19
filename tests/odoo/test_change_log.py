@@ -5,7 +5,7 @@ from fakes import mailbox, signed_in
 
 
 def test_odoo_writes_are_logged_with_a_link(db):
-    from app.odoo.client import Odoo
+    from app.shared.odoo.client import Odoo
 
     class Server:
         def execute_kw(self, *args):
@@ -25,7 +25,7 @@ def test_odoo_writes_are_logged_with_a_link(db):
 
 
 def test_odoo_writes_while_processing_an_email_are_recorded_against_it(client, db):
-    from app.odoo.client import Odoo
+    from app.shared.odoo.client import Odoo
 
     class Server:
         def execute_kw(self, *args):
@@ -56,11 +56,11 @@ def test_odoo_writes_while_processing_an_email_are_recorded_against_it(client, d
                     (1, None, "created", "b2b.ocr.booking.container", "MSCU1234567")]
 
     signed_in(client)
-    listing = client.get("/messages").get_data(as_text=True)
+    listing = client.get("/messages?groupby=none").get_data(as_text=True)
     assert "<b>Booking</b> BK123 <span>created</span>" in listing and "+1 line change" in listing
     assert "Nothing written" in listing  # the newsletter, processed with tracking
     assert "Not recorded" in listing  # processed before tracking
     detail = client.get("/messages/1").get_data(as_text=True)
     assert "http://odoo/web#model=b2b.ocr.booking&amp;id=41&amp;view_type=form" in detail and "bc.pdf" in detail
     assert "Invoice" not in detail
-    assert "BKG BK123" in client.get("/messages?q=MSCU1234567").get_data(as_text=True)
+    assert "BKG BK123" in client.get("/messages?q=MSCU1234567&groupby=none").get_data(as_text=True)

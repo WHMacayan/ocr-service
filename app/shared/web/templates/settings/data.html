@@ -1,0 +1,50 @@
+{% extends "layout/base.html" %}
+{% from "layout/_icons.html" import icon %}
+{% from "layout/_ui.html" import control_panel %}
+{% from "settings/_transfer.html" import upload, decide, changes with context %}
+{% block content %}
+<div class="page">
+  {{ control_panel(title, intro="Bring the team's files in, and take the service's data out. An upload is shown first; nothing changes until you press Apply.") }}
+
+  {% for part in job_parts %}{% include part.template %}{% endfor %}
+
+  <section class="card" id="records">
+    <div class="card-head"><div><h2>Records, list by list</h2>
+      <p>Every list can be exported with the fields you pick (Excel or CSV). The lists you can edit by file can also be imported: map the columns, test, then import. Each list also has this under its own Import / Export menu.</p></div></div>
+    <div class="card-body"><div class="table-scroll"><table class="data">
+      <thead><tr><th>List</th><th>Export</th><th>Import</th></tr></thead>
+      <tbody>
+      {% for s in record_sets %}
+      <tr><td class="cell-main"><span class="primary">{{ s.label }}</span></td>
+        <td data-label="Export"><a href="{{ url_for('web.data_export', key=s.key) }}" data-full>Export…</a></td>
+        <td data-label="Import">{% if s.importable %}<a href="{{ url_for('web.data_import', key=s.key) }}" data-full>Import…</a>{% else %}<span class="faint">Export only</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div></div>
+  </section>
+
+  <section class="card" id="setup">
+    <div class="card-head"><div><h2>Mappings and setup</h2>
+      <p>Vendor mappings, subject formats and settings in one workbook: edit them in bulk, or carry them to another install. Rows are matched by what they are (a mapping by role, printed name and sender domain), so ids don't matter. Secrets (API keys, passwords) are never in this file.</p></div></div>
+    <div class="card-body">
+      <div class="actions"><a class="btn secondary" href="{{ url_for('web.export_setup') }}">{{ icon("file") }} Download setup (Excel)</a></div>
+      <div style="margin-top:14px">
+      {% if previews.setup %}{{ changes(previews.setup) }}{{ decide("setup", "Import these changes") }}
+      {% else %}{{ upload("setup", "Upload setup workbook", ".xlsx") }}{% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="restore">
+    <div class="card-head"><div><h2>Full backup</h2>
+      <p>All of the service's setup in one file: Odoo connections, mailboxes, vendor mappings, subject formats and settings. Emails, files and readings are not included. Secrets stay encrypted: they open only with this install's <code>secret.key</code>, so to restore on another machine copy that file too, or enter the secrets again.</p></div></div>
+    <div class="card-body">
+      <div class="actions"><a class="btn secondary" href="{{ url_for('web.export_backup') }}">{{ icon("file") }} Download backup</a></div>
+      <div style="margin-top:14px">
+      {% if previews.restore %}{{ changes(previews.restore) }}{{ decide("restore", "Restore this backup") }}
+      {% else %}{{ upload("restore", "Upload backup to restore", ".json") }}{% endif %}
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

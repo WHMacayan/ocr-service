@@ -2,8 +2,9 @@
 
 import pytest
 
-from app.flows import customs, pipeline
-from app.core import store
+from app.customs import uploader as customs
+from app.shared import pipeline
+from app.shared.core import store
 from fakes import connection, email, odoo, row
 
 FORM_7501 = ("DEPARTMENT OF HOMELAND SECURITY OMB CONTROL NUMBER 1651-0022\nU.S. Customs and Border Protection\n"
@@ -75,7 +76,7 @@ def test_same_entry_number_again_and_other_pdfs_are_skipped(db, tmp_path, ai, te
 
 
 def test_sender_domain_filter_keeps_only_those_domains():
-    from app.mail.ingest import filter_reason
+    from app.shared.mail.ingest import filter_reason
     from fakes import message
     box = {"sender_domains": "tlius.com, example.org"}
     assert filter_reason(box, message(1, **{"from": {"emailAddress": {"address": "owen@TLIUS.com"}}})) is None
@@ -83,6 +84,6 @@ def test_sender_domain_filter_keeps_only_those_domains():
 
 
 def test_a_3461_is_recognised_but_not_sent_to_the_audit(tmp_path):
-    from app.flows import customs
+    from app.customs import uploader as customs
     assert customs.form_of("CBP FORM 3461 ENTRY/IMMEDIATE DELIVERY 1651-0024") == "3461"
     assert "3461" not in customs.SENT_FORMS and "7501" in customs.SENT_FORMS

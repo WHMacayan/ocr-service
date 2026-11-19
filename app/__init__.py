@@ -4,23 +4,26 @@
     flask --app app reset-password   forget the admin password
     flask --app app worker     run continuously
     flask --app app run-once   one pass: due mailboxes, then the new files
-    flask --app app clean-up [--apply]   settle existing conflicts, re-read ready bills, freight from bills
-    flask --app app payables-worker     the Freight Payables mailboxes, continuously
-    flask --app app payables-run-once   one pass over the due Freight Payables mailboxes
+
+Each job adds its own commands (flask --app app --help lists them): Freight Booking clean-up, import-booking-report
+and fill-bookings; Freight Payables payables-worker and payables-run-once.
 """
 
 import hashlib
 import logging
 import secrets
+from importlib import import_module
 from datetime import timedelta
+from pathlib import Path
 
 import click
 from flask import Flask
+from jinja2 import ChoiceLoader, FileSystemLoader
 
-from .core import store
-from .web import bp
-from .worker import run_forever, run_once
-from .payables import worker as payables_worker
+from app.shared.core import store
+from app.shared.web import bp
+from app.shared.jobs import all_jobs
+from app.shared.worker import run_forever, run_once
 
 
 def session_cookie_name(secret):
@@ -30,8 +33,11 @@ def session_cookie_name(secret):
 
 def create_app():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    # The pages' templates and static files live beside them, under web/.
-    app = Flask(__name__, template_folder="web/templates", static_folder="web/static")
+    # The shared pages' templates and static files live under shared/web/; each job keeps its own templates in its
+    # folder (freight_booking/templates/freight_booking/...), found after the shared ones.
+    app = Flask(__name__, template_folder="shared/web/templates", static_folder="shared/web/static")
+    here = Path(__file__).parent
+    app.jinja_loader = ChoiceLoader([app.jinja_loader] + [FileSystemLoader(str(path)) for path in sorted(here.glob("*/templates"))])
     db = store.connect()
     with db:
         db.execute("INSERT OR IGNORE INTO setting (key, value) VALUES ('web_secret', ?)",
@@ -49,6 +55,9 @@ def create_app():
         # Uploads: the Booking Report and setup workbooks, a backup file (the Import / Export page).
         MAX_CONTENT_LENGTH=25 * 1024 * 1024,
     )
+    for job in all_jobs():  # each job's pages, from its folder, before the blueprint is registered
+        if job.pages:
+            import_module(job.pages)
     app.register_blueprint(bp)
 
     @app.cli.command("reset-password")
@@ -76,93 +85,8 @@ def create_app():
         finally:
             db.close()
 
-    @app.cli.command("clean-up")
-    @click.option("--apply", is_flag=True, help="Write the changes; without it, only report them.")
-    def clean_up_command(apply):
-        """After the booking rules changed: close the conflicts they settle (see flows/cleanup.py)."""
-        from .flows import cleanup
-        from .odoo.client import Odoo
-        passes = {"conflicts": lambda db, odoo, cid: cleanup.close_false_conflicts(db, odoo, cid, apply)}
-        db = store.connect()
-        try:
-            for connection in store.connections(db, on=True):
-                odoo = Odoo.from_connection(db, connection)
-                for name in passes:
-                    outcome = passes[name](db, odoo, connection["id"])
-                    print(f"{connection['name']} · {name}{'' if apply else ' (report only)'}:")
-                    for reason, count in outcome.most_common():
-                        print(f"  {count:5}  {reason}")
-        finally:
-            db.close()
-
-    @app.cli.command("import-booking-report")
-    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
-    @click.option("--apply", is_flag=True, help="Write the rates; without it, only report them.")
-    @click.option("--out", type=click.Path(dir_okay=False), help="Save the row-by-row result as an Excel file.")
-    def import_booking_report_command(path, apply, out):
-        """Write the Booking Report's agreed rate per container to each booking's Cost per Container,
-        in every Odoo connection that is on (see flows/booking_report.py)."""
-        from openpyxl import load_workbook
-
-        from .flows import booking_report
-        from .odoo.client import Odoo
-        rows = booking_report.read_rows(load_workbook(path, read_only=True, data_only=True))
-        print(f"{len(rows)} booking rows read from {path}")
-        db = store.connect()
-        try:
-            for connection in store.connections(db, on=True):
-                odoo = Odoo.from_connection(db, connection)
-                outcomes, summary = booking_report.import_rates(odoo, rows, apply=apply)
-                print(f"{connection['name']}{'' if apply else ' (report only, nothing written)'}:")
-                for reason, count in summary.most_common():
-                    print(f"  {count:5}  {reason}")
-                if out:
-                    booking_report.write_report(out, outcomes)
-                    print(f"  row-by-row result: {out}")
-        finally:
-            db.close()
-
-    @app.cli.command("fill-bookings")
-    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
-    @click.option("--apply", is_flag=True, help="Write the values; without it, only report them.")
-    def fill_bookings_command(path, apply):
-        """Fill the empty fields a freight PO needs (factory invoice, Deliver To, rate, factory, charges) from the
-        Booking Report and the team's own freight POs, in every Odoo connection that is on (flows/booking_fill.py)."""
-        from openpyxl import load_workbook
-
-        from .flows import booking_fill
-        from .odoo.client import Odoo
-        rows = booking_fill.read_details(load_workbook(path, read_only=True, data_only=True))
-        print(f"{len(rows)} booking rows read from {path}")
-        db = store.connect()
-        try:
-            mappings = db.execute("SELECT * FROM vendor_mapping WHERE active = 1").fetchall()
-            for connection in store.connections(db, on=True):
-                odoo = Odoo.from_connection(db, connection)
-                done, summary = booking_fill.fill(odoo, mappings, rows, apply=apply)
-                print(f"{connection['name']}{'' if apply else ' (report only, nothing written)'}: "
-                      f"{len(done)} bookings filled")
-                for field, count in summary.most_common():
-                    print(f"  {count:5}  {field}")
-                if apply:
-                    store.log_activity(db, "settings", f"Filled {len(done)} bookings from the Booking Report and the "
-                                       f"team's freight POs ({connection['name']})", actor="admin")
-                    db.commit()
-        finally:
-            db.close()
-
-    @app.cli.command("payables-worker")
-    def payables_worker_command():
-        """Read the due Freight Payables mailboxes forever (no Odoo)."""
-        payables_worker.run_payables_forever()
-
-    @app.cli.command("payables-run-once")
-    def payables_run_once_command():
-        """One pass over the due Freight Payables mailboxes."""
-        db = payables_worker.connect()
-        try:
-            payables_worker.run_payables_once(db)
-        finally:
-            db.close()
+    for job in all_jobs():  # each job adds its own commands (freight_booking/commands.py, payables/commands.py)
+        if job.commands:
+            job.commands(app.cli)
 
     return app

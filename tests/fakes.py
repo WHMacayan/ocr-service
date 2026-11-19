@@ -4,8 +4,8 @@ temporary store; signing in to the pages."""
 import base64
 import re
 
-from app.core import store
-from app.flows.freight import Booker
+from app.shared.core import store
+from app.freight_booking.rules import Booker
 
 PDF = b"%PDF-1.4 test document"
 

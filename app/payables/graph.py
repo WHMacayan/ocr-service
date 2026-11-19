@@ -7,7 +7,7 @@ client stays as it is; this extends it.
 
 import requests
 
-from ..mail.graph import GRAPH_BASE, NETWORK_RETRIES, RETRY_SECONDS, Graph, GraphError
+from app.shared.mail.graph import GRAPH_BASE, NETWORK_RETRIES, RETRY_SECONDS, Graph, GraphError
 
 
 class PayablesGraph(Graph):

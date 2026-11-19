@@ -1,15 +1,15 @@
 import pytest
 
 from app import create_app
-from app.core import store
-from app.documents import extract
+from app.shared.core import store
+from app.shared.documents import extract
 from fakes import CONFIRMATION
 
 
 @pytest.fixture
 def db(tmp_path, monkeypatch):
     monkeypatch.setenv("OCR_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("app.web.auth._failures", {})
+    monkeypatch.setattr("app.shared.web.auth._failures", {})
     connection = store.connect()
     yield connection
     connection.close()

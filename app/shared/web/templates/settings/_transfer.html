@@ -1,0 +1,30 @@
+{% from "layout/_icons.html" import icon %}
+{% macro upload(kind, label, accept) -%}
+<form method="post" action="{{ url_for('web.import_upload', kind=kind) }}" enctype="multipart/form-data" class="actions" data-full>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="action" value="preview">
+  <input type="file" name="file" accept="{{ accept }}" required aria-label="{{ label }}">
+  <button class="btn secondary">{{ icon("file") }} {{ label }}</button>
+</form>
+{%- endmacro %}
+{% macro decide(kind, apply_label) -%}
+<div class="actions" style="margin-top:14px">
+  <form method="post" action="{{ url_for('web.import_upload', kind=kind) }}" data-full>
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="apply">
+    <button class="btn">{{ icon("check") }} {{ apply_label }}</button>
+  </form>
+  <form method="post" action="{{ url_for('web.import_upload', kind=kind) }}" data-full>
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="cancel">
+    <button class="btn secondary">{{ icon("x") }} Discard</button>
+  </form>
+</div>
+{%- endmacro %}
+{% macro changes(p) -%}
+{% if p.error %}<div class="callout bad">{{ icon("alert") }}<span>{{ p.error }}</span></div>
+{% else %}
+<table class="data" style="margin-top:8px"><thead><tr><th>What would change</th><th>Rows</th></tr></thead><tbody>
+  {% for what, count in p.changes %}<tr><td>{{ what }}</td><td>{{ count }}</td></tr>{% else %}<tr><td colspan="2">Nothing in this file.</td></tr>{% endfor %}
+</tbody></table>
+{% for note in p.notes %}<div class="callout warn" style="margin-top:10px">{{ icon("alert") }}<span>{{ note }}</span></div>{% endfor %}
+{% endif %}
+{%- endmacro %}

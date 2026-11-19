@@ -1,7 +1,7 @@
 """The Settings page and its secrets."""
 
 
-from app.core import store
+from app.shared.core import store
 from fakes import signed_in
 
 

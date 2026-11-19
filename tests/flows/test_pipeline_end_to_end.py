@@ -1,8 +1,8 @@
 """The pipeline from the service's own database to Odoo, with the AI stood in for."""
 
 
-from app.flows import pipeline
-from app.core import store
+from app.shared import pipeline
+from app.shared.core import store
 from fakes import connection, email, FakeOdoo, odoo, row
 
 

@@ -1,7 +1,7 @@
 """Freight Payables is a fourth mailbox purpose."""
 
-from app.core import store
-from app.web import forms
+from app.shared.core import store
+from app.shared.web import forms
 from fakes import signed_in
 
 

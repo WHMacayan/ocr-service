@@ -1,4 +1,4 @@
-from app import worker
+from app.shared import worker
 
 from fakes import mailbox
 

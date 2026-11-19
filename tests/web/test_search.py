@@ -1,4 +1,4 @@
-from app.web import search
+from app.shared.web import search
 
 from fakes import connection, mailbox, signed_in
 
@@ -86,6 +86,6 @@ def test_highlight_escapes_html(client, db):
 def test_emails_page_searches_all_emails(client, db):
     seed(db)
     signed_in(client)
-    page = client.get("/messages?q=apex").get_data(as_text=True)
+    page = client.get("/messages?q=apex&groupby=none").get_data(as_text=True)
     assert "Invoice 50%_off" in page and "Arrival notice" not in page
     assert "1 email match" in page

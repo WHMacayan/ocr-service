@@ -8,7 +8,7 @@ invoices, forwarded emails and screenshots pasted into the email.
 import io
 import zipfile
 
-from ..mail.ingest import is_supported_file
+from app.shared.mail.ingest import is_supported_file
 
 # Smaller inline pictures are signatures and logos (the scanner's MIN_IMAGE_BYTES).
 MIN_INLINE_IMAGE_BYTES = 20_000

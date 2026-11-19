@@ -1,9 +1,9 @@
 """Several Odoo connections: each that is on gets the same writes and keeps its own history."""
 
-from app.flows import pipeline
-from app.core import store
-from app import worker
-from app.odoo.client import Odoo
+from app.shared import pipeline
+from app.shared.core import store
+from app.shared import worker
+from app.shared.odoo.client import Odoo
 from fakes import connection, csrf, email, mailbox, odoo, row, signed_in
 
 

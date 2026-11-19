@@ -1,0 +1,33 @@
+{% from "layout/_icons.html" import icon %}
+{% from "settings/_transfer.html" import upload, decide with context %}
+  <section class="card" id="report">
+    <div class="card-head"><div><h2>Booking Report</h2>
+      <p>The team's Booking Report gives each booking its rate per container, factory invoice, factory and Deliver To. Upload the latest copy; the bookings are filled from it on the worker's next pass. Only empty fields are filled, and every value is noted on the booking with the report row it came from.</p></div></div>
+    <div class="card-body">
+      <p class="faint" style="margin-top:0">{% if report %}In use: uploaded {{ report.saved.strftime("%d %b %Y %H:%M") }} ({{ (report.size / 1024)|round|int }} KB).{% else %}No Booking Report yet.{% endif %}
+        {% if last_fill %} Last fill: {{ last_fill.replace("T", " ") }} UTC.{% endif %}
+        {% if connections %} Fills: {{ connections|join(", ") }}.{% else %} No Odoo connection is on.{% endif %}</p>
+      {% if previews.report %}
+        {% set p = previews.report %}
+        {% if p.error %}<div class="callout bad">{{ icon("alert") }}<span>{{ p.error }}</span></div>{% else %}
+        {% set s = p.summary %}
+        <table class="data"><thead><tr><th>The uploaded report</th><th>Rows</th></tr></thead><tbody>
+          <tr><td>Booking rows</td><td>{{ s.rows }}</td></tr>
+          <tr><td>… with a rate per container</td><td>{{ s.rates }}</td></tr>
+          <tr><td>… with a factory invoice</td><td>{{ s.invoices }}</td></tr>
+          <tr><td>… with an FD address (Deliver To)</td><td>{{ s.fd }}</td></tr>
+          <tr><td>… with the factory's e-mail</td><td>{{ s.factories }}</td></tr>
+          <tr><td>Tabs</td><td>{% for tab, n in s.tabs %}{{ tab }} ({{ n }}){{ ", " if not loop.last }}{% endfor %}</td></tr>
+        </tbody></table>
+        {% endif %}
+        {{ decide("report", "Use this report") }}
+      {% else %}{{ upload("report", "Upload Booking Report", ".xlsx") }}{% endif %}
+    </div>
+  </section>
+
+  <section class="card" id="bookings">
+    <div class="card-head"><div><h2>Bookings status</h2>
+      <p>Every freight booking in the Odoo connections that are on: its state, what is still missing, the B/Ls, containers, factory invoices, rate and freight PO, with a link to each booking. One sheet per connection.</p></div></div>
+    <div class="card-body"><a class="btn secondary" href="{{ url_for('web.export_bookings') }}">{{ icon("file") }} Download bookings (Excel)</a></div>
+  </section>
+

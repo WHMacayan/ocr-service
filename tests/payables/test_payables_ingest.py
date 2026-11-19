@@ -6,8 +6,8 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from app.core import store
-from app.mail.ingest import MailboxSync
+from app.shared.core import store
+from app.shared.mail.ingest import MailboxSync
 from app.payables.ingest import PayablesSync
 
 from fakes import PDF, FakeGraph, attachment, mailbox, message

@@ -25,8 +25,8 @@ class Odoo(FakeOdoo):
 @pytest.fixture
 def odoo(monkeypatch):
     fake = Odoo()
-    monkeypatch.setattr("app.odoo.client.Odoo.from_store", lambda db: fake)
-    monkeypatch.setattr("app.web.booking_compare._fields_cache", {})
+    monkeypatch.setattr("app.shared.odoo.client.Odoo.from_store", lambda db: fake)
+    monkeypatch.setattr("app.shared.web.odoo_fields._fields_cache", {})
     return fake
 
 
@@ -55,6 +55,8 @@ def test_scraped_bill_page_shows_the_form(client, db, odoo):  # noqa: F811
                   "No draft bill or purchase order", "Invoice TIMAC-260805",
                   f"/web#model=b2b.ocr.scraped.bill&amp;id={bill}"):
         assert shown in page
+    assert '<a class="o-crumb" href="/scraped-bills">Scraped bills</a>' in page         # the breadcrumb
+    assert "Went into this record" in page                                              # its Emails tab: the conversation
 
 
 def test_customs_goes_from_batch_to_entry_to_findings(client, db, odoo):  # noqa: F811
@@ -86,12 +88,12 @@ def test_record_deleted_in_odoo_says_so(client, db, odoo):  # noqa: F811
 
 
 def test_odoo_lists_ask_odoo_only_for_the_page_shown(client, db, monkeypatch):
-    from app.web import odoo_forms
+    from app.shared.web import odoo_forms
     signed_in(client)
     asked = []
-    monkeypatch.setattr("app.web.odoo_forms.record_ids", lambda db, purpose: set(range(1, 201)))
-    monkeypatch.setattr("app.web.odoo_forms.email_counts", lambda db, purpose: {})
-    monkeypatch.setattr("app.web.odoo_records._odoo_or_error", lambda: (object(), None))
+    monkeypatch.setattr("app.shared.web.odoo_forms.record_ids", lambda db, purpose: set(range(1, 201)))
+    monkeypatch.setattr("app.shared.web.odoo_forms.email_counts", lambda db, purpose: {})
+    monkeypatch.setattr("app.shared.web.odoo_records._odoo_or_error", lambda: (object(), None))
     monkeypatch.setattr(odoo_forms, "list_rows", lambda odoo, model, ids, columns: (
         asked.append(sorted(ids)) or ([("name", "Name")], [{"id": i, "raw": {}, "name": f"B{i}"} for i in sorted(ids, reverse=True)])))
     page = client.get("/scraped-bills?offset=80").get_data(as_text=True)
@@ -108,6 +110,9 @@ def test_odoo_lists_group_every_record_and_read_the_open_group_only(client, db, 
         for f, info in fields_get(model, method, *args, **kwargs).items()} if method == "fields_get"
         else fields_get(model, method, *args, **kwargs))
     signed_in(client)
+    default = client.get("/scraped-bills").get_data(as_text=True)        # opens grouped on the bill's state, folded
+    assert '<span class="clip">waiting</span><span class="n">3</span>' in default and "WAIT-0" not in default
+    assert "WAIT-0" in client.get("/scraped-bills?groupby=none").get_data(as_text=True)     # "No grouping" is a choice
     grouped = client.get("/scraped-bills?groupby=state").get_data(as_text=True)
     assert '<span class="clip">waiting</span><span class="n">3</span>' in grouped   # every bill, not one page
     assert '<span class="clip">ready_for_po</span><span class="n">1</span>' in grouped

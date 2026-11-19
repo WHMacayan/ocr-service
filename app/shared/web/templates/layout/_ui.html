@@ -1,0 +1,243 @@
+{% from "layout/_icons.html" import icon %}
+
+{# Every page's header, laid out as Odoo's control panel: breadcrumb and title on the left, the
+   search in the middle, the pager and the page's buttons (the call block) on the right, and a
+   one-line description below.
+   search: {"filter": "#table", "placeholder": …} filters the rows shown;
+           {"value": …, "placeholder": …, "keep": {name: value}} searches on the server (?q=).
+   group_by: {key: label}, the columns the Group By menu offers. #}
+{% macro control_panel(title, crumbs=(), intro=None, search=None, pager=None, badges=(), group_by=None, data=None, data_params=None) -%}
+<div class="page-head o-cp">
+  <div class="o-cp-title">
+    {%- for label, href in crumbs %}<a class="o-crumb" href="{{ href }}">{{ label }}</a><span class="o-crumb-sep" aria-hidden="true">/</span>{% endfor %}
+    <h1>{{ title }}</h1>
+    {%- for kind, label in badges if label %}<span class="badge {{ kind }}">{{ label }}</span>{% endfor %}
+  </div>
+  <div class="o-cp-search">
+    {%- if search and search.filter %}
+    <div class="search">{{ icon("search") }}<input type="search" placeholder="{{ search.placeholder }}" aria-label="{{ search.placeholder }}" data-filter="{{ search.filter }}"></div>
+    {%- elif search %}
+    <form class="search" method="get" role="search">
+      {%- for name, value in (search.keep or {}).items() if value %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+      {{ icon("search") }}<input type="search" name="q" value="{{ search.value or '' }}" placeholder="{{ search.placeholder }}" aria-label="{{ search.placeholder }}">
+    </form>
+    {%- endif %}
+  </div>
+  <div class="o-cp-right actions">
+    {%- if group_by %}{{ group_by_menu(group_by) }}{% endif %}
+    {%- if data %}{{ data_menu(data, data_params or {}) }}{% endif %}
+    {%- if pager and pager.total %}{{ pager_nav(pager) }}{% endif %}
+    {{- caller() if caller }}
+  </div>
+  {%- if intro %}<p class="o-cp-intro">{{ intro }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{# A record page's parts, as an Odoo form: everything sits on one sheet; fields in label/value
+   groups side by side, each under a small heading; tables full width below. #}
+{% macro group_title(title, note=None) -%}
+<h2 class="o-group-title">{{ title }}{% if note %}<span>{{ note }}</span>{% endif %}</h2>
+{%- endmacro %}
+
+{% macro field_group(title, fields) -%}
+<section class="o-group">
+  {{ group_title(title) }}
+  <dl class="kv">
+    {%- for label, value in fields %}
+    {%- set text = (value if value not in (none, false, "") else "–")|string %}
+    <div class="kv-row {{ 'long' if text|length > 60 or '\n' in text }}"><dt>{{ label }}</dt><dd>{{ text }}</dd></div>
+    {%- endfor %}
+  </dl>
+</section>
+{%- endmacro %}
+
+{# Odoo's notebook: the record's child tables as tabs under its fields, one shown at a time.
+   tabs: [(key, title, count)]; each panel is the call block with the tab's key passed in. #}
+{% macro notebook(tabs) -%}
+<div class="o-notebook">
+  <div class="o-tabs" role="tablist">
+    {%- for key, title, count in tabs %}
+    <button type="button" role="tab" id="tab-{{ key }}" aria-controls="panel-{{ key }}" aria-selected="{{ 'true' if loop.first else 'false' }}"
+            {% if not loop.first %}tabindex="-1"{% endif %}>{{ title }}{% if count is not none %}<span class="n">{{ count }}</span>{% endif %}</button>
+    {%- endfor %}
+  </div>
+  {%- for key, title, count in tabs %}
+  <section class="o-tabpanel" role="tabpanel" id="panel-{{ key }}" aria-labelledby="tab-{{ key }}" {% if not loop.first %}hidden{% endif %}>
+    {{ caller(key) }}
+  </section>
+  {%- endfor %}
+</div>
+{%- endmacro %}
+
+{% macro emails_rows(emails) -%}
+{%- if emails %}
+<div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Email</th><th>Received</th><th>State</th></tr></thead>
+    <tbody>
+    {%- for m in emails %}
+    {%- set href = url_for('web.message', message_id=m.id) %}
+    <tr data-href="{{ href }}">
+      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ m.subject or "No subject" }}</a><span class="sub">{{ m.sender or "" }}</span></td>
+      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
+      <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span></td>
+    </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- else %}<p class="faint">No email of this service fed it.</p>{% endif %}
+{%- endmacro %}
+
+{# A record's emails: its whole conversation, oldest first. Each shows what it changed on this record and what became of
+   each of its attachments; an email still waiting on a person has Process again beside it. thread: conversation(). #}
+{% macro thread_rows(thread) -%}
+{%- if thread %}
+<div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Email</th><th>Received</th><th>State</th><th>Changed on this record</th><th>Attachments</th></tr></thead>
+    <tbody>
+    {%- for m in thread %}
+    {%- set href = url_for('web.message', message_id=m.id) %}
+    <tr data-href="{{ href }}">
+      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ m.subject or "No subject" }}</a><span class="sub">{{ m.sender or "" }}</span></td>
+      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
+      <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span>
+        {%- if m.state in ("review", "failed") %}
+        <form method="post" action="{{ url_for('web.retry', message_id=m.id) }}" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn secondary">{{ icon("rotate") }} Process again</button></form>
+        {%- endif %}</td>
+      <td data-label="Changed on this record">
+        {%- if m.wrote %}{{ m.wrote|map(attribute="action")|unique|list|join(" and ")|capitalize }} this record
+        {%- elif m.state in ("review", "failed") %}<span class="nothing">{{ m.note or ("Needs review" if m.state == "review" else "Failed") }}</span>
+        {%- else %}<span class="nothing">Nothing</span>{% endif %}</td>
+      <td data-label="Attachments">
+        {%- for f in m.files %}
+        {%- if f.fed %}{% set result = {"created": "Created this record", "updated": "Updated this record", "deleted": "Removed from this record"}.get(f.fed, "Went into this record") %}
+        {%- elif f.state == "waiting" %}{% set result = "Waiting for its record" %}
+        {%- elif f.state == "failed" %}{% set result = "Failed" ~ (": " ~ f.note if f.note else "") %}
+        {%- elif f.state == "new" %}{% set result = "Not processed yet" %}
+        {%- else %}{% set result = "Nothing written here" ~ (" · " ~ f.note if f.note else "") %}{% endif %}
+        <span class="primary clip" title="{{ f.filename }}">{{ f.filename }}</span>
+        <span class="sub">{{ (f.doc_class or "Not read yet")|replace("_", " ")|capitalize }} · {{ result }}</span>
+        {%- else %}<span class="nothing">None</span>{% endfor %}</td>
+    </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- else %}<p class="faint">No email of this service fed this record.</p>{% endif %}
+{%- endmacro %}
+
+{% macro emails_table(emails, title="Emails that fed this record") -%}
+<section class="o-group o-wide">
+  {{ group_title(title, emails|length ~ " email" ~ ("s" if emails|length != 1 else "")) }}
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Email</th><th>Received</th><th>State</th></tr></thead>
+    <tbody>
+    {%- for m in emails %}
+    {%- set href = url_for('web.message', message_id=m.id) %}
+    <tr data-href="{{ href }}">
+      <td class="cell-main"><a class="primary clip" href="{{ href }}">{{ m.subject or "No subject" }}</a><span class="sub">{{ m.sender }}</span></td>
+      <td data-label="Received"><span class="num">{{ m.received|when }}</span></td>
+      <td data-label="State"><span class="badge {{ m.state }}">{{ state_labels.get(m.state, m.state) }}</span></td>
+    </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{%- endmacro %}
+
+{% macro statusbar(steps) -%}
+{%- if steps %}<ol class="statusbar" aria-label="Status">
+  {%- for label, current in steps %}<li {% if current %}aria-current="step"{% endif %}>{{ label }}</li>{% endfor %}
+</ol>{% endif %}
+{%- endmacro %}
+
+{# Odoo's pager: "1-80 / 374"; the range can be typed (1-200, then Enter); ‹ › turn the page. #}
+{% macro pager_nav(p) -%}
+<nav class="o-pager" aria-label="Pages">
+  <form class="o-pager-form" method="get">
+    {%- for name, value in p.keep.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    {%- set shown = p.first ~ "-" ~ p.last %}
+    <input class="o-pager-range" name="range" value="{{ shown }}" size="{{ shown|length }}" autocomplete="off" spellcheck="false"
+           title="Type the rows to show, such as 1-200, and press Enter" aria-label="Rows shown: type a range such as 1-200 and press Enter">
+    <span class="o-pager-total">/ {{ p.total }}</span>
+  </form>
+  {%- if p.turns %}
+  <span class="o-pager-btns">
+    <a class="btn secondary o-pager-btn" href="{{ p.prev }}" aria-label="Previous page">{{ icon("back") }}</a>
+    <a class="btn secondary o-pager-btn" href="{{ p.next }}" aria-label="Next page">{{ icon("chevron") }}</a>
+  </span>
+  {%- endif %}
+</nav>
+{%- endmacro %}
+
+{# Odoo's Import / Export for a list: an Export and, where the list can be edited by file, an Import, for each data set the
+   page offers (keys: data set keys). params: what the list is showing (its search, its state), carried to the export. #}
+{% macro data_menu(keys, params={}) -%}
+{%- set sets = data_sets(keys) %}
+{%- if sets %}
+<details class="o-dropdown o-data">
+  <summary title="Import and export records">{{ icon("file") }}<span>Import / Export</span></summary>
+  <div class="o-dropdown-menu right">
+    {%- for s in sets %}
+    <span class="o-dropdown-head">{{ s.label }}</span>
+    <a href="{{ url_for('web.data_export', key=s.key, **params) }}" data-full>Export…</a>
+    {%- if s.importable %}<a href="{{ url_for('web.data_import', key=s.key) }}" data-full>Import…</a>{% endif %}
+    {%- endfor %}
+  </div>
+</details>
+{%- endif %}
+{%- endmacro %}
+
+{# Odoo's Group By: the columns a list can be grouped on (options: {key: label}); ?groupby= carries
+   the choice. Each group's rows sit under a header that folds them away (static/js/app.js). #}
+{% macro group_by_menu(options) -%}
+{%- set m = group_menu(options) %}
+<details class="o-dropdown o-groupby">
+  <summary class="{{ 'on' if m.current }}" title="Group by">{{ icon("layers") }}<span>{{ m.label or "Group by" }}</span></summary>
+  <div class="o-dropdown-menu right">
+    <span class="o-dropdown-head">Group by</span>
+    {%- for key, label, href in m.links %}
+    <a href="{{ href }}" {% if key == m.current %}aria-current="true"{% endif %}>{{ label }}</a>
+    {%- endfor %}
+    {%- if m.current %}<a class="o-groupby-none" href="{{ m.none }}">No grouping</a>{% endif %}
+  </div>
+</details>
+{%- endmacro %}
+
+{# A group's header. Folded (no rows yet) it links to the list with the group open; the page
+   script loads those rows in place instead. An open group with more than a page of rows has its own
+   pager, as in Odoo, at the header's right. A short list's groups come open, every row there. #}
+{% macro group_head(grp) -%}
+<div class="o-group-head">
+  {%- set inner %}{{ icon("chevron") }}<span class="clip">{{ grp.label }}</span><span class="n">{{ grp.count }}</span>{% endset %}
+  {%- if grp.url %}<a href="{{ grp.url }}" data-group-toggle aria-expanded="{{ 'false' if grp.rows is none else 'true' }}">{{ inner }}</a>
+  {%- else %}<button type="button" data-group-toggle aria-expanded="true">{{ inner }}</button>{% endif %}
+  {%- if grp.pager %}
+  <span class="o-group-pager" aria-label="Pages of {{ grp.label }}">
+    <span class="o-pager-total"><b>{{ grp.pager.first }}-{{ grp.pager.last }}</b> / {{ grp.pager.total }}</span>
+    <a class="btn secondary o-pager-btn" href="{{ grp.pager.prev }}" data-group-page aria-label="Previous page of {{ grp.label }}">{{ icon("back") }}</a>
+    <a class="btn secondary o-pager-btn" href="{{ grp.pager.next }}" data-group-page aria-label="Next page of {{ grp.label }}">{{ icon("chevron") }}</a>
+  </span>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# A group in a table, as its own <tbody>: the header and the rows loaded (the call block draws one).
+   Not grouped: the rows alone. #}
+{% macro group_body(grp, columns, grouped) -%}
+<tbody {% if grouped %}data-group="{{ grp.key }}" {% if grp.rows is not none %}data-loaded{% endif %}{% endif %}>
+  {%- if grouped %}<tr class="o-group-row"><th colspan="{{ columns }}" scope="rowgroup">{{ group_head(grp) }}</th></tr>{% endif %}
+  {%- for row in grp.rows or [] %}{{ caller(row) }}{% endfor %}
+</tbody>
+{%- endmacro %}
+
+{# The same in a split-view list: the header item, then the group's items. #}
+{% macro group_items(grp, grouped) -%}
+{%- if grouped %}<li class="list-group" data-group="{{ grp.key }}" {% if grp.rows is not none %}data-loaded{% endif %}>{{ group_head(grp) }}</li>{% endif %}
+{%- for row in grp.rows or [] %}{{ caller(row) }}{% endfor %}
+{%- endmacro %}

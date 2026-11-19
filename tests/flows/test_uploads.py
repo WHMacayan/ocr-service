@@ -2,8 +2,8 @@
 
 import base64
 
-from app.documents import extract
-from app.flows import uploads
+from app.shared.documents import extract
+from app.scraped_bills import uploads
 
 from fakes import FakeOdoo, mapping
 from flows.test_pipeline_logic import make_matcher  # noqa: F401

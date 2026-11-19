@@ -14,9 +14,9 @@ import base64
 import hashlib
 from collections import Counter
 
-from ..core import store
-from ..mail.ingest import MailboxSync, dedupe_key, domain_of, parse_graph_datetime, sender_of
-from .kinds import MAX_FILE_BYTES, MIN_INLINE_IMAGE_BYTES, file_kind
+from app.shared.core import store
+from app.shared.mail.ingest import MailboxSync, dedupe_key, domain_of, parse_graph_datetime, sender_of
+from app.payables.kinds import MAX_FILE_BYTES, MIN_INLINE_IMAGE_BYTES, file_kind
 
 ITEM_ATTACHMENT = "#microsoft.graph.itemAttachment"
 

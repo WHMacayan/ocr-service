@@ -7,11 +7,12 @@ delays the booking, bill and customs mailboxes, and it needs no Odoo connection.
 import logging
 import time
 
-from ..core import store
-from ..odoo.client import utc_now
-from ..worker import DEFAULT_POLL_SECONDS, PAYABLES, is_due
-from .graph import PayablesGraph
-from .ingest import PayablesSync
+from app.shared.core import store
+from app.shared.odoo.client import utc_now
+from app.payables import PURPOSE as PAYABLES
+from app.shared.worker import DEFAULT_POLL_SECONDS, is_due
+from app.payables.graph import PayablesGraph
+from app.payables.ingest import PayablesSync
 
 _logger = logging.getLogger(__name__)
 

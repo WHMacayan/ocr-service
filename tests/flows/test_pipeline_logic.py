@@ -2,9 +2,10 @@
 
 from datetime import date
 
-from app.flows.bills import _READ, BillMatcher
-from app.documents.extract import checked, email_values
-from app.documents.text import newest_message_text, normalize_identifier, parse_month_date
+from app.scraped_bills.matcher import _READ, BillMatcher
+from app.freight_booking.reading import email_values
+from app.shared.documents.extract import checked
+from app.shared.documents.text import newest_message_text, normalize_identifier, parse_month_date
 from fakes import doc, FakeOdoo, make_booker, mapping
 
 

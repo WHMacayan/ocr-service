@@ -1,6 +1,6 @@
 """The main worker never reads a Freight Payables mailbox: its mail must never reach the Odoo pipeline."""
 
-from app import worker
+from app.shared import worker
 
 from fakes import mailbox
 

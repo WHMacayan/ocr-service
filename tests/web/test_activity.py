@@ -10,15 +10,15 @@ def test_activity_pages_like_odoo_and_takes_a_typed_range(client, db):
         db.executemany("INSERT INTO activity (kind, actor, summary) VALUES ('processing', 'worker', ?)",
                        [(f"Entry {n:03}",) for n in range(200)])
     total = db.execute("SELECT COUNT(*) FROM activity").fetchone()[0]
-    first = client.get("/activity").get_data(as_text=True)
+    first = client.get("/activity?groupby=none").get_data(as_text=True)
     assert 'value="1-80"' in first and f"/ {total}" in first
     assert "Entry 199" in first and "Entry 119" not in first
-    assert 'href="/activity?offset=80"' in first                        # next page
-    second = client.get("/activity?offset=80").get_data(as_text=True)
+    assert 'href="/activity?groupby=none&amp;offset=80"' in first                        # next page
+    second = client.get("/activity?groupby=none&offset=80").get_data(as_text=True)
     assert 'value="81-160"' in second and "Entry 119" in second and "Entry 199" not in second
-    typed = client.get("/activity?range=1-150").get_data(as_text=True)  # typed into the pager
+    typed = client.get("/activity?groupby=none&range=1-150").get_data(as_text=True)  # typed into the pager
     assert 'value="1-150"' in typed and "Entry 060" in typed
-    filtered = client.get("/activity?q=Entry+00").get_data(as_text=True)
+    filtered = client.get("/activity?q=Entry+00&groupby=none").get_data(as_text=True)
     assert 'value="1-10"' in filtered and "/ 10" in filtered and 'name="q" value="Entry 00"' in filtered
 
 
@@ -41,7 +41,7 @@ def test_activity_records_settings_security_and_hides_secrets(client, db):
     assert any(r["summary"] == "Created subject format Maersk" for r in rows)
     assert rows[-1]["actor"].startswith("admin from")
 
-    page = client.get("/activity?kind=settings").get_data(as_text=True)
+    page = client.get("/activity?kind=settings&groupby=none").get_data(as_text=True)
     assert "Created subject format Maersk" in page and "Admin password set" not in page
 
 
@@ -67,4 +67,7 @@ def test_activity_groups_every_entry_and_opens_a_group_as_odoo_does(client, db):
     assert 'href="/activity?groupby=kind&amp;group=processing" data-group-page aria-label="Next' in second  # back to the first
     assert "data-group-page" not in client.get("/activity?groupby=kind&group=security").get_data(as_text=True)
     assert 'href="/activity?kind=odoo&amp;groupby=kind"' in grouped         # the type tabs keep the grouping
-    assert 'data-group=' not in client.get("/activity").get_data(as_text=True)
+    # Every list opens grouped: by day until another column is chosen, and "No grouping" is a choice of its own.
+    default = client.get("/activity").get_data(as_text=True)
+    assert 'aria-current="true">Day</a>' in default and 'data-group="' in default
+    assert 'data-group=' not in client.get("/activity?groupby=none").get_data(as_text=True)

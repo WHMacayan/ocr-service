@@ -1,7 +1,7 @@
 """Mailboxes, vendor mappings and subject formats: their forms, lists and mailbox actions."""
 
 
-from app.core import store
+from app.shared.core import store
 from fakes import mailbox, signed_in
 
 
@@ -35,7 +35,7 @@ def test_odoo_lists_load_sorted_by_name_and_long_ones_are_searchable(client, mon
             count = 40 if model == "res.partner" else 2
             return [{"id": n, "display_name": f"{model} {n}"} for n in range(1, count + 1)]
 
-    monkeypatch.setattr("app.odoo.client.Odoo.from_store", lambda db: FakeOdoo())
+    monkeypatch.setattr("app.shared.odoo.client.Odoo.from_store", lambda db: FakeOdoo())
     signed_in(client)
     page = client.get("/vendor-mappings/new").get_data(as_text=True)
 
@@ -58,11 +58,11 @@ def test_setup_pages_list_their_records_beside_the_form(client, db):
     box = mailbox(db, name="Customs Fetching")
     mailbox(db, name="Bills")
     page = client.get(f"/mailboxes/{box['id']}").get_data(as_text=True)
-    assert 'data-list-key="mailboxes"' in page and "Bills" in page
+    assert 'data-list-key="mailboxes by purpose"' in page and "Bills" in page
     assert f'href="/mailboxes/{box["id"]}" aria-current="true"' in page
     assert 'id="record-form"' in page
     runs = client.get(f"/mailboxes/{box['id']}/runs").get_data(as_text=True)
-    assert 'data-list-key="mailboxes"' in runs and "Run history" in runs
+    assert 'data-list-key="mailboxes by purpose"' in runs and "Run history" in runs
 
 
 def test_clear_starts_a_mailbox_over_and_keeps_its_settings(client, db, tmp_path):
@@ -138,4 +138,6 @@ def test_setup_lists_group_by_a_choice(client, db):
         < page.index('<span class="clip">Forwarder</span><span class="n">2</span>')
     assert 'href="/vendor-mappings/1?groupby=role"' in page
     assert ">Odoo partner</a>" in page and ">Freight mode</a>" in page   # what the menu offers
-    assert 'data-group=' not in client.get("/vendor-mappings/").get_data(as_text=True)
+    default = client.get("/vendor-mappings/").get_data(as_text=True)         # opens grouped on the role
+    assert 'aria-current="true">Role</a>' in default and 'data-group="' in default
+    assert 'data-group=' not in client.get("/vendor-mappings/?groupby=none").get_data(as_text=True)

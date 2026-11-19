@@ -1,7 +1,7 @@
 """The store: settings seeded once, secrets encrypted, changes kept."""
 
 
-from app.core import store
+from app.shared.core import store
 
 
 def test_defaults_seeded_and_secrets_encrypted(db, tmp_path):
@@ -21,3 +21,10 @@ def test_a_changed_setting_survives_a_restart(db, tmp_path):
     again = store.connect()
     assert store.get_setting(again, "max_retries", int) == 9
     again.close()
+
+
+def test_connections_opened_at_once_do_not_collide(db):
+    """Every request opens the database; two at once must not trip over each other's triggers."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(lambda _: store.connect().close(), range(40)))

@@ -1,0 +1,144 @@
+"""Every request: the sign-in check, the form token, security headers, the database; what every page is
+given; the activity log; reaching Odoo."""
+
+import logging
+import secrets
+from urllib.parse import urlparse
+
+from flask import current_app, flash, g, redirect, request, session, url_for
+
+from app.shared.web import bp
+from app.shared.web.forms import FORMS
+from app.shared.core import store
+from app.shared.jobs import all_jobs
+from app.shared.odoo.client import Odoo
+
+_logger = logging.getLogger(__name__)
+
+
+# The route an email takes, in order, then the states off the route.
+STATE_LABELS = {"new": "Queued", "review": "Needs review", "done": "Done",
+                "failed": "Failed", "skipped": "Skipped"}
+ROUTE = ("new", "review", "done")
+OFF_ROUTE = ("failed", "skipped")
+
+
+# ── request plumbing ─────────────────────────────────────────────────
+
+@bp.before_app_request
+def open_db_and_check_login():
+    g.db = store.connect()
+    if request.method == "POST" and not secrets.compare_digest(
+            request.form.get("csrf", ""), session.get("csrf", "")):
+        flash("That page was open too long, so nothing was saved. Please try again.", "error")
+        return redirect(form_page())
+    if request.endpoint in ("web.login", "web.setup", "static"):
+        return None
+    if not store.get_setting(g.db, "admin_password_hash"):
+        return redirect(url_for("web.setup"))
+    if not session.get("signed_in") or session.get("version") != store.get_setting(g.db, "session_version"):
+        _logger.warning("Sign-in needed for %s %s%s: %s", request.method, request.path,
+                        " (background refresh)" if request.headers.get("X-Live") else "", _why_signed_out())
+        # Keep the form token: a background request (the browser's favicon) must not
+        # break a login form that is already on the screen.
+        token = session.get("csrf")
+        session.clear()
+        if token:
+            session["csrf"] = token
+        # Back to this page after signing in; a form posted or a background refresh goes to the home page.
+        wanted = request.full_path.rstrip("?") if request.method == "GET" and not request.headers.get("X-Live") else None
+        return redirect(url_for("web.login", next=wanted if wanted not in ("/", None) else None))
+    return None
+
+
+def _why_signed_out():
+    """Why this browser isn't signed in, for the web log: the cause of a sign-in nobody asked for."""
+    if current_app.config["SESSION_COOKIE_NAME"] not in request.cookies:
+        return "the browser sent no login cookie (never signed in here, cleared, or replaced by another site)"
+    if not session:
+        return "the login cookie wasn't accepted (made by another copy of the service, or damaged)"
+    if not session.get("signed_in"):
+        return "the cookie is from before signing in, or from signing out"
+    return "signed out everywhere (the password was changed)"
+
+
+@bp.after_app_request
+def warn_of_big_cookies(response):
+    """Browsers drop a cookie over 4 KB without a word, which would sign you out: say so in the log."""
+    for header in response.headers.getlist("Set-Cookie"):
+        if len(header) > 3800:
+            _logger.warning("A %d-byte cookie was sent for %s; browsers drop cookies over 4 KB", len(header), request.path)
+    return response
+
+
+def safe_next(value):
+    """A page of this site to go to after signing in, or None: never another site (//host or a scheme)."""
+    value = (value or "").strip()
+    if not value.startswith("/") or value.startswith("//") or "\\" in value or urlparse(value).netloc:
+        return None
+    return value
+
+
+def form_page():
+    """Where to send a refused form: the page it was posted to when that page can be
+    shown, else the page it came from on this site, else the home page."""
+    if request.url_rule and "GET" in request.url_rule.methods:
+        return request.path
+    came_from = urlparse(request.referrer or "")
+    if came_from.netloc == request.host and came_from.path.startswith("/"):
+        return came_from.path
+    return url_for("web.home")
+
+
+@bp.after_app_request
+def security_headers(response):
+    """Pages run only this app's own scripts, are never framed, and never leak their address."""
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; img-src 'self' data:; form-action 'self' https://login.microsoftonline.com; "
+        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'")
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.endpoint != "static":
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@bp.teardown_app_request
+def close_db(_exc):
+    db = g.pop("db", None)
+    if db:
+        db.close()
+
+
+@bp.app_context_processor
+def template_helpers():
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_urlsafe(32)
+    failed, on = 0, []
+    if session.get("signed_in") and "db" in g:
+        failed = g.db.execute("SELECT COUNT(*) FROM message WHERE state = 'failed'").fetchone()[0]
+        on = g.db.execute(f"SELECT id, name, is_production FROM odoo_connection WHERE active = 1 "
+                          f"ORDER BY {store.CONNECTION_ORDER}").fetchall()
+    return {"csrf": session["csrf"], "forms": FORMS, "state_labels": STATE_LABELS, "failed_count": failed,
+            "connections_on": on, "job_menu": [item for job in all_jobs() for item in job.menu]}
+
+
+def audit(kind, summary, detail=None, level="info", link=None):
+    """An activity entry for something a person did on this page."""
+    store.log_activity(g.db, kind, summary, detail, level=level, actor=f"admin from {request.remote_addr or '?'}",
+                       link=link)
+
+
+def reference_url():
+    """The address of the Odoo the pages read and link to, "" when no connection is on."""
+    reference = store.reference_connection(g.db)
+    return ((reference or {}).get("url") or "").strip().rstrip("/")
+
+
+def _odoo_or_error():
+    try:
+        return Odoo.from_store(g.db), None
+    except Exception as exc:
+        return None, str(exc)

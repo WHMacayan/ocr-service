@@ -1,7 +1,7 @@
 """Signing in: the first start, login and its lockout, the form token, the login cookie."""
 
 
-from app.core import store
+from app.shared.core import store
 from fakes import csrf, signed_in
 
 
