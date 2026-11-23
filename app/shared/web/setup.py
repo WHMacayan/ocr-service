@@ -140,10 +140,24 @@ def sync_now(mailbox_id):
     return redirect(url_for("web.record", key="mailboxes", record_id=mailbox_id))
 
 
+@bp.route("/mailboxes/<int:mailbox_id>/cancel", methods=["POST"])
+def cancel_read(mailbox_id):
+    """Ask a running read to stop. The worker stops between emails; what is saved stays."""
+    mailbox = store.mailbox(g.db, mailbox_id) or abort(404)
+    if mailbox["status"] == "running":
+        store.update_mailbox(g.db, mailbox_id, {"cancel_requested": 1})
+        audit("processing", f"Asked to cancel the read of mailbox {mailbox['name']}",
+              link=url_for("web.runs", mailbox_id=mailbox_id))
+        flash("Cancelling: the read stops after the email it is on. Emails already saved stay.")
+    else:
+        flash("This mailbox is not being read.")
+    return redirect(url_for("web.record", key="mailboxes", record_id=mailbox_id))
+
+
 # A copy starts unconnected and unread: Microsoft rotates the refresh token, so two mailboxes
 # sharing one would sign each other out.
 NOT_DUPLICATED = ("id", "refresh_token", "access_token", "token_expires_at", "sync_requested",
-                  "fetch_resume_from", "status", "last_sync", "last_error", "group_miss_note")
+                  "cancel_requested", "fetch_resume_from", "status", "last_sync", "last_error", "group_miss_note")
 
 
 @bp.route("/mailboxes/<int:mailbox_id>/duplicate", methods=["POST"])
@@ -168,7 +182,7 @@ def clear_mailbox(mailbox_id):
     mailbox = store.mailbox(g.db, mailbox_id) or abort(404)
     link = url_for("web.record", key="mailboxes", record_id=mailbox_id)
     if mailbox["status"] == "running":
-        flash("The mailbox is being read right now. Wait for the read to finish, then clear it.", "error")
+        flash("The mailbox is being read right now. Press Cancel read, wait for it to stop, then clear it.", "error")
         return redirect(link)
     files = g.db.execute("SELECT f.path FROM file f JOIN message m ON m.id = f.message_id WHERE m.mailbox_id = ?",
                          (mailbox_id,)).fetchall()

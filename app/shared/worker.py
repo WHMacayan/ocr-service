@@ -115,10 +115,30 @@ def run_once(db, purposes=None):
     store.prune_activity(db)
 
 
+def recover_interrupted(db, purposes=None):
+    """A restart (rebuild, crash) kills a read half way and leaves the mailbox "Reading now" with nobody
+    reading it, so it could be neither cancelled nor cleared. Called when a worker starts: it is the only
+    one reading its purposes, so any read still marked running is dead. Emails already saved stay and the
+    next read carries on from the resume point."""
+    note = "Stopped: the service restarted and this run did not finish."
+    for mailbox in store.active_mailboxes(db):
+        if mailbox["status"] != "running" or (purposes and mailbox["purpose"] not in purposes):
+            continue
+        with db:
+            for run in db.execute("SELECT id, log FROM run WHERE mailbox_id = ? AND status = 'running'",
+                                  (mailbox["id"],)).fetchall():
+                db.execute("UPDATE run SET status = 'error', log = ? WHERE id = ?",
+                           (f"{run['log']}\n{note}" if run["log"] else note, run["id"]))
+        store.update_mailbox(db, mailbox["id"], {"status": "partial", "cancel_requested": 0})
+        store.log_activity(db, "processing", f"Read of mailbox {mailbox['name']} was interrupted", note,
+                           level="warning", link=f"/mailboxes/{mailbox['id']}/runs")
+
+
 def run_forever():
     db = store.connect()
     # Other workers write too: wait for their short transactions rather than fail.
     db.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    recover_interrupted(db, worker_purposes())
     _logger.info("Worker for %s", ", ".join(worker_purposes() or ("every mailbox",)))
     while True:
         try:
