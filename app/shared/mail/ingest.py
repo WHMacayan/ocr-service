@@ -254,7 +254,11 @@ class MailboxSync:
             return "error"
 
         counters = Counter()
+        if not messages and self._cancel_asked():
+            return self._cancel(counters, fetch_values)
         for index, message in enumerate(messages, start=1):
+            if self._cancel_asked():
+                return self._cancel(counters, fetch_values, message)
             subject = (message.get("subject") or "(no subject)")[:60]
             self.log(f"Email {index}/{len(messages)}: '{subject}' from {sender_of(message) or '?'}")
             try:
@@ -267,6 +271,32 @@ class MailboxSync:
 
         return self._finish(counters, fetch_values, truncated)
 
+    def _cancel_asked(self):
+        row = self.db.execute("SELECT cancel_requested FROM mailbox WHERE id = ?", (self.mailbox["id"],)).fetchone()
+        return bool(row and row["cancel_requested"])
+
+    def _cancel(self, counters, fetch_values, next_message=None):
+        """Stop on the user's request. Emails already saved stay; the next read carries on from the first
+        one not saved (``next_message``), or starts again when the stop came while listing the mailbox."""
+        if next_message is not None:
+            received = parse_graph_datetime(next_message.get("receivedDateTime"))
+            if received:
+                fetch_values["fetch_resume_from"] = received
+        else:
+            fetch_values = {}
+        self.log(f"Run cancelled. {counters['created_emails']} email(s) were saved before it stopped; "
+                 "the next read carries on from there.")
+        self.flush({"status": "partial", "finished_at": self._stamp(),
+                    "attachments": counters["attachments"], "documents_created": counters["created"],
+                    "duplicates": counters["duplicates"], "invalid": counters["invalid"],
+                    "failed": counters["failed"]})
+        store.update_mailbox(self.db, self.mailbox["id"], dict(
+            fetch_values, status="partial", last_sync=self._stamp(), cancel_requested=0, last_error=None))
+        store.log_activity(self.db, "processing", f"Read of mailbox {self.mailbox['name']} cancelled",
+                           f"{counters['created_emails']} new email(s) saved before it stopped.",
+                           level="warning", link=f"/mailboxes/{self.mailbox['id']}/runs")
+        return "partial"
+
     def _begin(self):
         with self.db:
             for stale in self.db.execute("SELECT id, log FROM run WHERE mailbox_id = ? AND status = 'running'",
@@ -277,7 +307,8 @@ class MailboxSync:
             self.run_id = self.db.execute("INSERT INTO run (mailbox_id) VALUES (?)",
                                           (self.mailbox["id"],)).lastrowid
         store.update_mailbox(self.db, self.mailbox["id"],
-                             {"status": "running", "last_error": None, "sync_requested": 0})
+                             {"status": "running", "last_error": None, "sync_requested": 0,
+                              "cancel_requested": 0})
         group = (self.mailbox.get("group_address") or "").strip()
         self.log(
             f"Run started: {self.mailbox['purpose']}; "
@@ -320,6 +351,8 @@ class MailboxSync:
 
         self.log(f"Reading the mailbox: {params['$filter']}")
         while pages < max_pages:
+            if self._cancel_asked():
+                return [], {}, False
             messages, next_link = self.graph.messages_page(url, params)
             pages += 1
             headers_read += len(messages)

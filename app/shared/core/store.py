@@ -74,7 +74,7 @@ def connect(path=None):
 # rewrites on its own (tokens, sync status, last check) do not count as a change.
 TIMED_TABLES = {
     "mailbox": ("access_token", "refresh_token", "token_expires_at", "status", "last_sync", "last_error",
-                "sync_requested", "fetch_resume_from", "group_miss_note"),
+                "sync_requested", "cancel_requested", "fetch_resume_from", "group_miss_note"),
     "odoo_connection": ("last_check_at", "last_check_note"),
     "message": (),
     "file": (),
@@ -143,6 +143,8 @@ def _upgrade_prompts(db):
 # Columns added to tables after their first release: CREATE TABLE IF NOT EXISTS leaves existing tables as they are.
 ADDED_COLUMNS = [("message", "processed_at", "TEXT"), ("odoo_change", "values_json", "TEXT"),
                  ("mailbox", "sender_domains", "TEXT"),
+                 # Set by the Cancel read button; the worker stops between emails and clears it.
+                 ("mailbox", "cancel_requested", "INTEGER NOT NULL DEFAULT 0"),
                  ("odoo_change", "connection_id", "INTEGER REFERENCES odoo_connection(id) ON DELETE CASCADE"),
                  ("payables_setting", "export_folder", "TEXT"),
                  ("payables_setting", "export_auto", "INTEGER NOT NULL DEFAULT 0"),

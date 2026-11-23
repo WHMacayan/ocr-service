@@ -49,10 +49,17 @@
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="btn {{ 'secondary' if connected else '' }}">{{ icon("plug") }} {{ "Reconnect Outlook" if connected else "Connect Outlook" }}</button>
       </form>
+      {% if record.status == "running" %}
+      <form method="post" action="{{ url_for('web.cancel_read', mailbox_id=record_id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn secondary" {% if record.cancel_requested %}disabled{% endif %}>{{ icon("alert") }} {{ "Cancelling…" if record.cancel_requested else "Cancel read" }}</button>
+      </form>
+      {% else %}
       <form method="post" action="{{ url_for('web.sync_now', mailbox_id=record_id) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="btn secondary" {% if not connected %}disabled title="Connect Outlook first"{% endif %}>{{ icon("refresh") }} Read now</button>
       </form>
+      {% endif %}
       <a class="btn ghost" href="{{ url_for('web.runs', mailbox_id=record_id) }}">{{ icon("history") }} Run history</a>
       <form method="post" action="{{ url_for('web.duplicate_mailbox', mailbox_id=record_id) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
