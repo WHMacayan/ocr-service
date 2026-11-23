@@ -75,6 +75,34 @@ def test_same_entry_number_again_and_other_pdfs_are_skipped(db, tmp_path, ai, te
     assert tuple(note(invoice)) == ("skipped", "Not a CBP 7501 or 3461.")
 
 
+def test_queuing_the_email_again_never_uploads_the_file_twice(db, tmp_path, ai, texts):  # noqa: F811
+    fake = odoo()
+    texts.current = FORM_7501
+    message_id = customs_email(db, tmp_path)
+    pipeline.process(db, fake, connection(db))
+    # What the Retry button does: states back to new (the Odoo id stays).
+    with db:
+        db.execute("UPDATE message SET state = 'new', email_done = 0 WHERE id = ?", (message_id,))
+        db.execute("UPDATE message_target SET state = 'new', email_done = 0 WHERE message_id = ?", (message_id,))
+        db.execute("UPDATE file_target SET state = 'new', note = NULL")
+        db.execute("UPDATE file SET state = 'new', note = NULL WHERE message_id = ?", (message_id,))
+    pipeline.process(db, fake, connection(db))
+
+    assert len(fake.rows("cbp7501.entry")) == 1
+
+
+def test_an_entry_already_in_odoo_is_not_uploaded_again(db, tmp_path, ai, texts):  # noqa: F811
+    fake = odoo()
+    fake.add("cbp7501.entry", entry_number="040-0496733-9")  # there from before this service's history
+    texts.current = FORM_7501
+    message_id = customs_email(db, tmp_path)
+    pipeline.process(db, fake, connection(db))
+
+    assert len(fake.rows("cbp7501.entry")) == 1
+    assert db.execute("SELECT note FROM file WHERE message_id = ?", (message_id,)).fetchone()["note"] == \
+        "Entry 040-0496733-9 is already in Odoo's customs audit."
+
+
 def test_sender_domain_filter_keeps_only_those_domains():
     from app.shared.mail.ingest import filter_reason
     from fakes import message

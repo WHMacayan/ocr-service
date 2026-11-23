@@ -88,6 +88,23 @@
   </div>
 </form>
 
+{% if not is_new and record.active %}
+<div class="card" style="margin-top:20px">
+  <div class="card-head"><div><h2>Mail to write</h2>
+    <p>This connection gets every email received from this date on. Mail received earlier is read but not written.
+      Move the date back to include older mail{% if record.is_production %}; this is production{% endif %}.</p></div></div>
+  <div class="card-body">
+    <form class="actions" method="post" action="{{ url_for('web.connection_start', connection_id=connection_id) }}"
+          {% if record.is_production %}data-confirm="Change which mail is written to production {{ record.name }}?"{% endif %}>
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="start_from">Write mail received from</label>
+      <input type="date" id="start_from" name="start_from" value="{{ (record.start_from or '')[:10] }}" required>
+      <button class="btn secondary">Save date</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 {% if not is_new %}
 <div class="card" style="margin-top:20px">
   <div class="card-body danger-card">
