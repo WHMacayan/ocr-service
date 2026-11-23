@@ -168,6 +168,28 @@ def connection_on(connection_id):
                            reference=store.reference_connection(g.db))
 
 
+@bp.route("/connections/<int:connection_id>/start", methods=["POST"])
+def connection_start(connection_id):
+    """Change which mail an active connection writes: everything received from this date."""
+    connection = _connection(connection_id)
+    link = _connection_link(connection_id)
+    start = request.form.get("start_from") or ""
+    if not connection["active"]:
+        flash("Set the start date when you turn the connection on.", "error")
+    elif not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start):
+        flash("Enter the start date as a date.", "error")
+    else:
+        old = (connection["start_from"] or "")[:10] or "all mail"
+        with g.db:
+            g.db.execute("UPDATE odoo_connection SET start_from = ? WHERE id = ?", (f"{start} 00:00:00", connection_id))
+            store.refresh_messages(g.db)
+        audit("settings", f"Changed the start date of Odoo connection {connection['name']}",
+              f"Writes mail received from {start} (was {old}).",
+              level="warning" if connection["is_production"] else "info", link=link)
+        flash(f"{connection['name']} now gets mail received from {start}.")
+    return redirect(link)
+
+
 @bp.route("/connections/<int:connection_id>/off", methods=["POST"])
 def connection_off(connection_id):
     connection = _connection(connection_id)

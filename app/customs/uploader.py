@@ -65,13 +65,24 @@ class CustomsUploader:
         if form not in SENT_FORMS:
             return "skipped", (f"CBP {form} entry {number or '(number not read)'}: a release request with no duty "
                                f"or fee amounts, not sent to the customs audit."), None
-        # The broker resends the same entry as a new PDF (a paperless copy): one entry per number.
+        # Never upload the same customs file twice (user rule, 22 Nov 2026): Odoo has no duplicate check on
+        # this path, and a second entry inflates the batch totals. Checked three ways, before anything is created.
+        # 1. This very file was uploaded before and was queued again by hand (Retry keeps its Odoo id).
+        sent = self.db.execute("SELECT odoo_id FROM file_target WHERE file_id = ? AND connection_id = ? "
+                               "AND odoo_id IS NOT NULL", (file["id"], self.connection_id)).fetchone()
+        if sent:
+            return "skipped", f"Already uploaded as customs entry {sent['odoo_id']}.", sent["odoo_id"]
+        # 2. The broker resends the same entry as a new PDF (a paperless copy): one entry per number.
         if number and self.db.execute(
                 "SELECT 1 FROM file f JOIN file_target t ON t.file_id = f.id AND t.connection_id = ? "
-                "WHERE f.doc_class = 'customs_entry' AND t.state = 'done' AND f.id != ? "
+                "WHERE f.doc_class = 'customs_entry' AND t.odoo_id IS NOT NULL AND f.id != ? "
                 "AND json_extract(f.extracted, '$.entry_number') = ? LIMIT 1",
                 (self.connection_id, file["id"], number)).fetchone():
             return "skipped", f"Entry {number} is already in the customs audit.", None
+        # 3. The entry is already in Odoo, however it got there (cleared mailbox, wiped history, a person's
+        # upload). An error here stops the file rather than risk a second entry; it is tried again next pass.
+        if number and self.odoo.call(ENTRY, "search", [("entry_number", "=", number)], limit=1):
+            return "skipped", f"Entry {number} is already in Odoo's customs audit.", None
         entry_id = self.odoo.create(ENTRY, {"batch_id": self.batch((received or "")[:10]),
                                             "file_name": file["filename"],
                                             "pdf_file": base64.b64encode(raw).decode()})
