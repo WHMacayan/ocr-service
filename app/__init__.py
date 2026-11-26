@@ -11,6 +11,7 @@ and fill-bookings; Freight Payables payables-worker and payables-run-once.
 
 import hashlib
 import logging
+import os
 import secrets
 from importlib import import_module
 from datetime import timedelta
@@ -19,6 +20,7 @@ from pathlib import Path
 import click
 from flask import Flask
 from jinja2 import ChoiceLoader, FileSystemLoader
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.shared.core import store
 from app.shared.web import bp
@@ -55,6 +57,13 @@ def create_app():
         # Uploads: the Booking Report and setup workbooks, a backup file (the Import / Export page).
         MAX_CONTENT_LENGTH=25 * 1024 * 1024,
     )
+    if os.environ.get("OCR_BEHIND_PROXY", "").strip().lower() in ("1", "true", "yes"):
+        # Behind an https proxy (Caddy): trust its X-Forwarded-For / -Proto / -Host headers, so the page knows it is on
+        # https (the Outlook sign-in address, redirects) and sees each visitor's own address (the lockout counts per
+        # address), and send the login cookie only over https. Off by default: on a PC, or on plain http, it would
+        # sign everyone out. Only turn it on when nothing but the proxy can reach the page.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+        app.config["SESSION_COOKIE_SECURE"] = True
     for job in all_jobs():  # each job's pages, from its folder, before the blueprint is registered
         if job.pages:
             import_module(job.pages)
