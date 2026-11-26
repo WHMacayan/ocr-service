@@ -1,5 +1,6 @@
 """The Import / Export page: the Booking Report upload, the setup workbook, the full backup."""
 
+import re
 import io
 import json
 
@@ -89,6 +90,125 @@ def test_a_booking_report_is_previewed_then_used_on_the_next_pass(db, client):
     page = client.get("/import-export").get_data(as_text=True)
     assert "Use this report" in page and "26OCT (1)" in page
     assert not (store.data_dir() / "booking_report.xlsx").exists()                     # not used before Apply
-    client.post("/import-export/report", data={"csrf": token, "action": "apply"})
+    digest = re.search(r'name="digest" value="([0-9a-f]{64})"', page).group(1)
+    client.post("/import-export/report", data={"csrf": token, "action": "apply", "digest": digest})
     assert (store.data_dir() / "booking_report.xlsx").exists()
     assert store.get_setting(db, "fill_last_at") is None                                # filled on the next pass
+
+
+def test_a_setup_workbook_replaced_after_its_preview_is_not_applied(client, db):
+    token = signed_in(client)
+
+    def book(value):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Settings"
+        ws.append(["key", "value"])
+        ws.append(["max_pages", value])
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
+
+    def preview(value):
+        client.post("/import-export/setup", data={"csrf": token, "action": "preview", "file": (io.BytesIO(book(value)), "s.xlsx")},
+                    content_type="multipart/form-data")
+        return client.get("/import-export").get_data(as_text=True)
+
+    first = preview("11")
+    digest = re.search(r'name="digest" value="([0-9a-f]{64})"', first).group(1)
+    preview("12")  # another browser uploads over it
+
+    refused = client.post("/import-export/setup", data={"csrf": token, "action": "apply", "digest": digest}, follow_redirects=True)
+
+    assert "replaced after you previewed it" in refused.get_data(as_text=True)
+    assert store.get_setting(db, "max_pages") == "20"
+
+
+# ── v003 R02: what is checked, previewed and applied is one set of bytes ──
+
+import hashlib  # noqa: E402
+
+from app.shared.jobs import TransferPart  # noqa: E402
+from app.shared.web import data_transfer  # noqa: E402
+
+
+def synthetic(monkeypatch, on_preview=None):
+    """A transfer part of its own; ``applied`` collects the bytes its apply was given."""
+    applied = []
+
+    def preview(path):
+        if on_preview:
+            on_preview()  # another upload arrives while the preview is being made
+        return {"changes": [], "notes": []}
+
+    part = TransferPart("synthetic", "synthetic.pending.bin", "", preview,
+                        lambda db, path: applied.append(path.read_bytes()))
+    monkeypatch.setattr(data_transfer, "parts", lambda: {"synthetic": part})
+    return part, applied
+
+
+def pending_file():
+    return store.data_dir() / "synthetic.pending.bin"
+
+
+def test_a_file_that_replaces_the_pending_one_during_the_preview_is_not_the_one_applied(client, db, monkeypatch):
+    token = signed_in(client)
+    pending = pending_file()
+    pending.write_bytes(b"A")
+    fingerprint = hashlib.sha256(b"A").hexdigest()
+    part, applied = synthetic(monkeypatch, on_preview=lambda: pending.write_bytes(b"B"))
+
+    client.post("/import-export/synthetic", data={"csrf": token, "action": "apply", "digest": fingerprint})
+
+    assert applied == [b"A"]                      # the bytes that were previewed and validated
+    assert pending.read_bytes() == b"B"           # the new upload is still waiting for its own preview
+
+
+def test_a_file_replaced_after_the_digest_check_cannot_change_what_is_applied(client, db, monkeypatch):
+    token = signed_in(client)
+    pending = pending_file()
+    pending.write_bytes(b"A")
+    part, applied = synthetic(monkeypatch)
+    real = data_transfer.digest
+
+    def digest_then_replace(path):
+        value = real(path)
+        pending.write_bytes(b"B")  # replaced right after the check
+        return value
+    monkeypatch.setattr(data_transfer, "digest", digest_then_replace)
+
+    client.post("/import-export/synthetic", data={"csrf": token, "action": "apply", "digest": hashlib.sha256(b"A").hexdigest()})
+
+    assert applied == [b"A"] and pending.read_bytes() == b"B"
+
+
+def test_a_file_replaced_before_apply_is_refused_and_left_for_its_own_preview(client, db, monkeypatch):
+    token = signed_in(client)
+    pending = pending_file()
+    pending.write_bytes(b"B")
+    part, applied = synthetic(monkeypatch)
+
+    client.post("/import-export/synthetic", data={"csrf": token, "action": "apply", "digest": hashlib.sha256(b"A").hexdigest()})
+
+    assert applied == [] and pending.read_bytes() == b"B"
+
+
+def test_the_page_digest_is_of_the_bytes_the_preview_was_made_from(client, db, monkeypatch):
+    signed_in(client)
+    pending = pending_file()
+    pending.write_bytes(b"A")
+    seen = []
+
+    def preview(path):
+        seen.append(path.read_bytes())
+        pending.write_bytes(b"B")  # replaced while previewing
+        return {"changes": [], "notes": []}
+    part = TransferPart("synthetic", "synthetic.pending.bin", "", preview, lambda db, path: None)
+    monkeypatch.setattr(data_transfer, "parts", lambda: {"synthetic": part})
+
+    previews = {}
+    monkeypatch.setattr(data_transfer, "render_template", lambda *a, **k: previews.update(k["previews"]) or "ok")
+    client.get("/import-export")
+
+    assert seen == [b"A"] and previews["synthetic"]["digest"] == hashlib.sha256(b"A").hexdigest()
+    assert not list(store.data_dir().glob(".*.bin"))  # no private copies left behind

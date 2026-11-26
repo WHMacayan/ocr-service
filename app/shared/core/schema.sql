@@ -110,6 +110,22 @@ CREATE TABLE IF NOT EXISTS file (
 );
 CREATE INDEX IF NOT EXISTS file_message ON file (message_id);
 
+-- Where else a stored email arrived (another mailbox of the same company), and on which other emails of that company a
+-- stored file was attached again: the email and the file are processed once, these keep every place they came from.
+CREATE TABLE IF NOT EXISTS message_source (
+    message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+    mailbox_id INTEGER NOT NULL REFERENCES mailbox(id),
+    graph_message_id TEXT,
+    seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (message_id, mailbox_id)
+);
+CREATE TABLE IF NOT EXISTS file_source (
+    file_id INTEGER NOT NULL REFERENCES file(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+    filename TEXT,
+    PRIMARY KEY (file_id, message_id)
+);
+
 -- A supplier invoice (Bill Matching) from a forwarder or carrier, read once more as a freight document:
 -- its freight cost goes to its booking. Kept so the AI is never asked twice.
 CREATE TABLE IF NOT EXISTS file_freight_reading (

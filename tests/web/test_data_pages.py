@@ -2,6 +2,7 @@
 (upload, map the columns, test, apply)."""
 
 import io
+import re
 
 import pytest
 
@@ -9,6 +10,13 @@ from app.shared.data.tables import read_table, write_table
 
 from data_fakes import DataOdoo, patch_odoo, seed_bookings
 from fakes import connection, mailbox, signed_in
+
+
+
+def digest_of(client, key):
+    """The fingerprint of the uploaded file the import page carries for Apply (review F17)."""
+    page = client.get(f"/data/{key}/import").get_data(as_text=True)
+    return re.search(r'name="digest" value="([0-9a-f]{64})"', page).group(1)
 
 
 def last_activity(db):
@@ -147,7 +155,7 @@ def test_a_file_is_uploaded_mapped_tested_and_only_then_applied(client, db):
     assert "1 to add · 1 to update · 0 with no change" in tested and "Nothing has been written" in tested
     assert "Cost per container: 4900.0 → 6500.0" in tested
     assert db.execute("SELECT COUNT(*) FROM vendor_mapping").fetchone()[0] == 2        # a test writes nothing
-    done = client.post("/data/vendor-mappings/import", data={**fields, "action": "apply"}).get_data(as_text=True)
+    done = client.post("/data/vendor-mappings/import", data={**fields, "action": "apply", "digest": digest_of(client, "vendor-mappings")}).get_data(as_text=True)
     assert "1 added · 1 updated" in done
     assert db.execute("SELECT cost_per_container FROM vendor_mapping WHERE id = 1").fetchone()[0] == 6500.0
     assert db.execute("SELECT role, document_name FROM vendor_mapping WHERE id = 3").fetchone()[:] == ("factory", "SENTURY")
@@ -163,10 +171,10 @@ def test_a_row_with_a_problem_stops_the_import_unless_it_is_skipped(client, db):
     upload(client, token, "vendor-mappings", ["Role", "Name on documents", "Sender domain", "Cost per container"],
            [["Forwarder", "FRESH", None, 100], ["Carrier", "BAD", None, 200]])
     fields = {"csrf": token, "col_0": "role", "col_1": "document_name", "col_2": "sender_domain", "col_3": "cost_per_container"}
-    stopped = client.post("/data/vendor-mappings/import", data={**fields, "action": "apply"}, follow_redirects=True).get_data(as_text=True)
+    stopped = client.post("/data/vendor-mappings/import", data={**fields, "action": "apply", "digest": digest_of(client, "vendor-mappings")}, follow_redirects=True).get_data(as_text=True)
     assert "1 row(s) have a problem" in stopped and "Role: choose one of: Forwarder, Factory" in stopped
     assert db.execute("SELECT COUNT(*) FROM vendor_mapping").fetchone()[0] == 2
-    done = client.post("/data/vendor-mappings/import", data={**fields, "skip": "on", "action": "apply"}).get_data(as_text=True)
+    done = client.post("/data/vendor-mappings/import", data={**fields, "skip": "on", "action": "apply", "digest": digest_of(client, "vendor-mappings")}).get_data(as_text=True)
     assert "1 added · 0 updated" in done and "1 skipped" in done
     assert db.execute("SELECT COUNT(*) FROM vendor_mapping").fetchone()[0] == 3
 
@@ -190,7 +198,7 @@ def test_a_csv_file_imports_like_a_workbook(client, db):
     upload(client, token, "subject-formats", ["Name", "Subject pattern", "This subject confirms the booking"],
            [["Maersk", r"BKG (?P<booking_number>\d+)", "Yes"]], filename="formats.csv")
     client.post("/data/subject-formats/import", data={"csrf": token, "col_0": "name", "col_1": "subject_pattern", "col_2": "confirms_booking",
-                                                      "action": "apply"})
+                                                      "action": "apply", "digest": digest_of(client, "subject-formats")})
     assert tuple(db.execute("SELECT name, confirms_booking FROM subject_format").fetchone()) == ("Maersk", 1)
 
 
@@ -224,7 +232,7 @@ def test_bookings_are_imported_into_the_connection_chosen_and_production_is_call
     fields = {"csrf": token, "col_0": "id", "col_1": "booking_number", "col_2": "vessel", "col_3": "forwarder_id"}
     tested = client.post("/data/bookings/import", data={**fields, "action": "test"}).get_data(as_text=True)
     assert "1 to add · 1 to update" in tested and "Vessel: MSC ANNA → EVER GIVEN" in tested and odoo.writes == []
-    done = client.post("/data/bookings/import", data={**fields, "action": "apply"}).get_data(as_text=True)
+    done = client.post("/data/bookings/import", data={**fields, "action": "apply", "digest": digest_of(client, "bookings")}).get_data(as_text=True)
     assert "1 added · 1 updated" in done
     assert [w[0] for w in odoo.writes] == ["write", "create"]
     entry = last_activity(db)
@@ -243,3 +251,20 @@ def test_an_import_into_odoo_says_so_when_odoo_cannot_be_read(client, db, monkey
     monkeypatch.setattr("app.shared.odoo.client.Odoo.from_connection", refuse)
     page = client.get("/data/bookings/import").get_data(as_text=True)
     assert "Odoo could not be read, so the fields are not known" in page and "Odoo refused the login" in page
+
+
+def test_apply_refuses_a_file_that_replaced_the_one_that_was_tested(client, db):
+    token = signed_in(client)
+    seed_mappings(db)
+    upload(client, token, "vendor-mappings", ["Role", "Name on documents", "Sender domain", "Cost per container"], [["Forwarder", "FIRST", None, 100]])
+    fields = {"csrf": token, "col_0": "role", "col_1": "document_name", "col_2": "sender_domain", "col_3": "cost_per_container"}
+    digest = digest_of(client, "vendor-mappings")
+    upload(client, token, "vendor-mappings", ["Role", "Name on documents", "Sender domain", "Cost per container"], [["Forwarder", "SECOND", None, 100]])  # another tab
+
+    refused = client.post("/data/vendor-mappings/import", data={**fields, "action": "apply", "digest": digest}).get_data(as_text=True)
+
+    assert "The file was replaced" in refused
+    assert db.execute("SELECT COUNT(*) FROM vendor_mapping").fetchone()[0] == 2  # nothing written
+    done = client.post("/data/vendor-mappings/import", data={**fields, "action": "apply",
+                                                             "digest": digest_of(client, "vendor-mappings")}).get_data(as_text=True)
+    assert "1 added" in done and db.execute("SELECT COUNT(*) FROM vendor_mapping WHERE document_name = 'SECOND'").fetchone()[0] == 1

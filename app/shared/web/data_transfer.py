@@ -2,7 +2,10 @@
 the jobs add (Freight Booking: the Booking Report upload and the bookings status export). Every upload is first
 shown as a preview; nothing changes until Apply."""
 
+import hashlib
 import io
+import os
+import uuid
 from datetime import datetime
 
 from flask import flash, g, redirect, render_template, request, send_file, url_for
@@ -22,6 +25,11 @@ def _path(name):
 
 def _stamp():
     return datetime.now().strftime("%Y-%m-%d")
+
+
+def digest(path):
+    """Fingerprint of a file's bytes, as a hex string."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _changes(outcome):
@@ -52,17 +60,38 @@ def parts():
     return {part.kind: part for part in SHARED + tuple(p for job in all_jobs() for p in job.transfer)}
 
 
-def _preview(part):
+def _preview(part, path=None):
     try:
-        return part.preview(_path(part.pending))
+        return part.preview(path or _path(part.pending))
     except Exception as exc:  # a file that cannot be read is shown as such, never applied
         return {"error": f"The file could not be read: {exc}"}
+
+
+def _private_copy(pending):
+    """A file of this request's own with the pending file's bytes (read once), and their digest: what is shown, and
+    what is applied after it, is one set of bytes that no other upload can replace (review v003 R02). None when
+    the pending file is gone."""
+    try:
+        data = pending.read_bytes()
+    except FileNotFoundError:
+        return None, None
+    copy = pending.with_name(f".{uuid.uuid4().hex}{pending.suffix}")
+    copy.write_bytes(data)
+    return copy, hashlib.sha256(data).hexdigest()
 
 
 @bp.route("/import-export")
 def import_export():
     found = parts()
-    previews = {kind: _preview(part) for kind, part in found.items() if _path(part.pending).exists()}
+    previews = {}
+    for kind, part in found.items():
+        copy, fingerprint = _private_copy(_path(part.pending))
+        if copy is None:
+            continue
+        try:
+            previews[kind] = dict(_preview(part, copy), digest=fingerprint)
+        finally:
+            copy.unlink(missing_ok=True)
     job_parts = [part for job in all_jobs() for part in job.transfer]
     context = {}
     for part in job_parts:
@@ -83,15 +112,28 @@ def import_upload(kind):
         pending.unlink(missing_ok=True)
         return redirect(url_for("web.import_export"))
     if action == "apply":
-        if not pending.exists():
+        # Take the pending file out of reach first: an upload arriving now makes a new pending file and cannot
+        # change this one. What is checked, previewed and applied is this one file (review v003 R02).
+        taken = pending.with_name(f".applying.{uuid.uuid4().hex}{pending.suffix}")
+        try:
+            os.replace(pending, taken)
+        except FileNotFoundError:
             flash("Upload the file again: its preview is gone.", "error")
             return redirect(url_for("web.import_export"))
-        if _preview(part).get("error"):
-            flash("That file cannot be applied: it could not be read.", "error")
+        try:
+            if request.form.get("digest") != digest(taken):
+                if not pending.exists():  # not the file that was previewed: leave it for its own preview
+                    os.replace(taken, pending)
+                flash("The file was replaced after you previewed it. Check the new preview, then apply it.", "error")
+                return redirect(url_for("web.import_export"))
+            if _preview(part, taken).get("error"):
+                flash("That file cannot be applied: it could not be read.", "error")
+                return redirect(url_for("web.import_export"))
+            part.apply(g.db, taken)
+            g.db.commit()
             return redirect(url_for("web.import_export"))
-        part.apply(g.db, pending)
-        g.db.commit()
-        return redirect(url_for("web.import_export"))
+        finally:
+            taken.unlink(missing_ok=True)
     upload = request.files.get("file")
     if not upload or not upload.filename:
         flash("Choose a file first.", "error")

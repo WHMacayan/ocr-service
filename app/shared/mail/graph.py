@@ -22,6 +22,25 @@ GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 SCOPE = "openid profile email offline_access User.Read Mail.Read"
 NETWORK_RETRIES = 3
 RETRY_SECONDS = 5
+# While Outlook says it is busy (429, 503, 504) a call waits as long as asked, but not forever: a mailbox that stays
+# throttled gives up (the read shows the error and is tried again at its next turn) instead of holding the worker
+# for good (review F07).
+BUSY_RETRIES = 12
+BUSY_BUDGET_SECONDS = 600
+MAX_WAIT_SECONDS = 120
+DEFAULT_WAIT_SECONDS = 10
+# Attachment pages followed for one email, under a ceiling against an endless nextLink (review F06).
+MAX_ATTACHMENT_PAGES = 50
+
+
+def retry_after(resp):
+    """Seconds Outlook asks to wait, from the Retry-After header: a whole number of seconds, kept within 1 and
+    MAX_WAIT_SECONDS. A missing, negative or unreadable value (a date, text) is the default."""
+    try:
+        seconds = int(float(str(resp.headers.get("Retry-After", "")).strip()))
+    except (TypeError, ValueError, OverflowError):
+        return DEFAULT_WAIT_SECONDS
+    return min(max(seconds, 1), MAX_WAIT_SECONDS) if seconds > 0 else DEFAULT_WAIT_SECONDS
 
 
 class GraphError(Exception):
@@ -108,7 +127,7 @@ class Graph:
 
     def get(self, url, params=None, timeout=60):
         """One GET returning the JSON body, retried while Outlook is busy."""
-        network_errors = 0
+        network_errors = busy_waits = waited = 0
         while True:
             try:
                 resp = self.http.get(url, headers=self._headers(), params=params, timeout=timeout)
@@ -123,7 +142,12 @@ class Graph:
                 self.sleep(RETRY_SECONDS)
                 continue
             if resp.status_code in (429, 503, 504):
-                wait = int(resp.headers.get("Retry-After", 10))
+                wait = retry_after(resp)
+                busy_waits += 1
+                waited += wait
+                if busy_waits > BUSY_RETRIES or waited > BUSY_BUDGET_SECONDS:
+                    raise GraphError(f"Outlook stayed busy ({resp.status_code}) for {waited - wait} seconds; "
+                                     "the mailbox is read again at its next turn.")
                 _logger.warning("Outlook busy (%s), retrying in %ss", resp.status_code, wait)
                 self.sleep(wait)
                 continue
@@ -135,11 +159,23 @@ class Graph:
         data = self.get(url, params, timeout=30)
         return data.get("value", []), data.get("@odata.nextLink")
 
+    def attachment_list(self, message_id):
+        """Every attachment's details, following the pages Outlook splits a long list into. A list that is still
+        not complete after MAX_ATTACHMENT_PAGES is an error, never a shorter list taken for the whole."""
+        url, params, found = f"{GRAPH_BASE}/me/messages/{message_id}/attachments", {
+            "$select": "id,name,contentType,size,isInline"}, []
+        for _page in range(MAX_ATTACHMENT_PAGES):
+            data = self.get(url, params, timeout=120)
+            found += data.get("value", [])
+            url = data.get("@odata.nextLink")
+            if not url:
+                return found
+            params = None  # the next link already carries them
+        raise GraphError(f"The attachment list of message {message_id} is longer than {MAX_ATTACHMENT_PAGES} pages.")
+
     def attachments(self, message_id):
         """Downloadable attachments of a message: not inline, not empty."""
-        data = self.get(f"{GRAPH_BASE}/me/messages/{message_id}/attachments",
-                        {"$select": "id,name,contentType,size,isInline"}, timeout=120)
-        return [att for att in data.get("value", [])
+        return [att for att in self.attachment_list(message_id)
                 if not att.get("isInline") and att.get("size", 0) > 0]
 
     def attachment(self, message_id, attachment_id):
@@ -152,7 +188,7 @@ class Graph:
         for _attempt in range(NETWORK_RETRIES + 1):
             resp = self.http.get(url, headers=self._headers(), timeout=120)
             if resp.status_code in (429, 503, 504):
-                self.sleep(int(resp.headers.get("Retry-After", 10)))
+                self.sleep(retry_after(resp))
                 continue
             if resp.status_code != 200:
                 raise GraphError(f"Microsoft Graph error {resp.status_code}:\n{resp.text[:1000]}")

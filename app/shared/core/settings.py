@@ -34,7 +34,7 @@ SETTINGS = [
             "How many of a run's new files the AI reads at the same time, before anything is written to Odoo. "
             "More is faster on a backlog; OpenAI's rate limit for your key is the ceiling. 1 reads them one by one."),
     Setting("documents_per_run", "Files processed per run", "int", "", "Processing",
-            "How many files are read in one pass of the worker. Spreads the work and the AI cost over time."),
+            "How many files are processed in one pass of the worker, in each of the new and the waiting queues. Spreads the work and the AI cost over time. An email with more files than this is done over several passes and stays pending until its last file."),
     Setting("max_retries", "Attempts before an email is marked failed", "int", "", "Processing",
             "How many times an email is tried again after an error, such as Odoo being unreachable, before it "
             "is marked Failed for a person to look at."),
@@ -45,3 +45,34 @@ SETTINGS = [
 ]
 
 SECRET_SETTINGS = {s.key for s in SETTINGS if s.kind == "secret"}
+
+
+# The whole numbers a worker acts on, with the range each may take (review F10). The upper limits are policy, kept
+# well above the seeded defaults and not a measured capacity: no combination of them has been load tested. A value outside it stops a
+# worker (a negative wait), starves it (0 files per run) or removes a bound (a negative SQL limit), so it is
+# refused when written and ignored, for the default, if one is stored anyway.
+SETTING_RANGES = {
+    "max_chars": (100, 200_000),
+    "max_pages": (1, 100),
+    "ai_parallel": (1, 20),
+    "documents_per_run": (1, 200),
+    "max_retries": (1, 100),
+    "poll_seconds": (5, 86_400),
+    "activity_days": (1, 3650),
+}
+_LABELS = {s.key: s.label for s in SETTINGS}
+
+
+def setting_problem(key, value):
+    """Why ``value`` cannot be the setting ``key``, else None."""
+    key = str(key or "").strip().lower()
+    if key not in SETTING_RANGES or value in (None, ""):
+        return None
+    low, high = SETTING_RANGES[key]
+    try:
+        number = int(str(value).strip())
+    except ValueError:
+        return f"{_LABELS[key]}: enter a whole number."
+    if not low <= number <= high:
+        return f"{_LABELS[key]}: enter a number from {low:,} to {high:,}."
+    return None

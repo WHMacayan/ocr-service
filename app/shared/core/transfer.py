@@ -19,11 +19,17 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
 from app.shared.core import store
-from app.shared.core.settings import SECRET_SETTINGS
+from app.shared.core.settings import SECRET_SETTINGS, setting_problem
 
 BACKUP_VERSION = 1
 # Never carried: this install's own sign-in and session secrets, and the worker's bookkeeping.
 PRIVATE_SETTINGS = {"admin_password_hash", "web_secret", "session_version", "fill_last_at"}
+
+
+def is_private(key):
+    """A setting kept by the service itself, never exported or imported (fill_last_at.<connection> included)."""
+    key = str(key or "").strip().lower()
+    return key in PRIVATE_SETTINGS or key.startswith("fill_last_at.")
 _TIMES = ("id", "created_at", "updated_at")
 
 # sheet name, table, the columns that say which row it is
@@ -55,7 +61,7 @@ def _key(row, keys):
 
 def _plain_settings(db):
     return [dict(r) for r in db.execute("SELECT key, value FROM setting ORDER BY key")
-            if r["key"] not in SECRET_SETTINGS and r["key"] not in PRIVATE_SETTINGS
+            if r["key"] not in SECRET_SETTINGS and not is_private(r["key"])
             and not r["key"].startswith("export_fields.")]  # a last field pick is a preference, not setup
 
 
@@ -108,8 +114,12 @@ def import_setup(db, data, apply=False):
             row = {h: _norm(v) for h, v in zip(head, values) if h in allowed}
             if not any(v is not None for v in row.values()):
                 continue
-            if table == "setting" and (row.get("key") in SECRET_SETTINGS or row.get("key") in PRIVATE_SETTINGS):
+            if table == "setting" and (str(row.get("key") or "").strip().lower() in SECRET_SETTINGS
+                                       or is_private(row.get("key"))):
                 notes.append(f"{sheet} row {number}: {row.get('key')} is set on the Settings page only; skipped.")
+                continue
+            if table == "setting" and setting_problem(row.get("key"), row.get("value")):
+                notes.append(f"{sheet} row {number}: {setting_problem(row.get('key'), row.get('value'))} Skipped.")
                 continue
             if not all(row.get(k) for k in keys if k != "sender_domain"):
                 summary[f"{sheet}: rows skipped (missing {', '.join(keys)})"] += 1
@@ -117,6 +127,8 @@ def import_setup(db, data, apply=False):
             existing = current.get(_key(row, keys))
             if existing:
                 changed = {c: v for c, v in row.items() if _norm(existing.get(c)) != v}
+                if table == "setting":
+                    changed.pop("key", None)  # the key says which row it is: a different case never renames it
                 if not changed:
                     summary[f"{sheet}: unchanged"] += 1
                     continue
@@ -143,7 +155,7 @@ def backup(db):
     for table, _keys in BACKUP_TABLES:
         rows = [dict(r) for r in db.execute(f"SELECT * FROM {table}")]
         if table == "setting":
-            rows = [r for r in rows if r["key"] not in PRIVATE_SETTINGS]
+            rows = [r for r in rows if not is_private(r["key"])]
         tables[table] = rows
     names = {r["id"]: r["name"] for r in tables["mailbox"]}
     for row in tables["payables_setting"]:
@@ -176,7 +188,7 @@ def restore(db, data, apply=False):
             columns |= {"mailbox_id"}
         current = {_key(dict(r), keys): dict(r) for r in db.execute(f"SELECT * FROM {table}")}
         for row in rows:
-            if table == "setting" and row.get("key") in PRIVATE_SETTINGS:
+            if table == "setting" and is_private(row.get("key")):
                 continue
             if table == "payables_setting":
                 mailbox_id = mailbox_ids.get(row.get("mailbox_name"))

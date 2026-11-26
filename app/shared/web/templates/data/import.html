@@ -36,6 +36,7 @@
 {% endif %}
 <form method="post" action="{{ url_for('web.data_import', key=ds.key) }}" data-full>
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="digest" value="{{ digest }}">
   <section class="card">
     <div class="card-head"><div><h2>2. Map your columns</h2>
       <p>Each column of the file ({{ total }} row{{ "s" if total != 1 }}) goes into one field. Columns set to “Do not import” are ignored.</p></div></div>

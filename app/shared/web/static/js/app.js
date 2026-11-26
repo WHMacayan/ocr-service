@@ -30,6 +30,7 @@ const localTimes = text => text.replace(/(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)( UTC
 
 const served = new WeakMap();  // live area -> the HTML the server sent, to tell when it changed
 let leaveGuard = null;         // a record form with unsaved changes
+let saving = false;            // a save is on its way: leaving for its answer needs no question
 
 function initToast(t) {
   t.querySelector("[data-dismiss]")?.addEventListener("click", () => t.remove());
@@ -57,8 +58,10 @@ function init(root) {
     const markDirty = () => { dirty = true; bar?.classList.add("show"); };
     form.addEventListener("input", markDirty);
     form.addEventListener("change", markDirty);
-    form.addEventListener("submit", () => { submitting = true; });
-    leaveGuard = () => dirty && !submitting && document.contains(form);
+    // A full page submit leaves the page for good. A soft one is covered by `saving` (visit), which ends with the
+    // answer: when the save failed or never reached the service the form stays, still unsaved, and the guard with it.
+    form.addEventListener("submit", () => { if (form.hasAttribute("data-full")) submitting = true; });
+    leaveGuard = () => dirty && !submitting && !saving && document.contains(form);
     form.querySelector("[data-discard]")?.addEventListener("click", () => { dirty = false; visit(location.href, { push: false }); });
   });
 
@@ -177,13 +180,19 @@ function init(root) {
   });
 }
 
+function withoutLoaded(list, items) {
+  const have = new Set([...list.querySelectorAll(":scope > [data-key]")].map(el => el.dataset.key));
+  return items.filter(li => li.dataset.key === undefined || !have.has(li.dataset.key));
+}
+
 async function loadMore(more) {
   const list = more.parentElement;
   try {
     const page = await load(more.dataset.more);
     const fresh = page.html && new DOMParser().parseFromString(page.html, "text/html").getElementById(list.id);
     if (!fresh) throw new Error("no list");
-    const items = [...fresh.children].filter(li => !li.classList.contains("list-empty"));
+    // Rows that arrived meanwhile shift the pages (offset paging): what is on the list already is not added again.
+    const items = withoutLoaded(list, [...fresh.children].filter(li => !li.classList.contains("list-empty")));
     more.replaceWith(...items);
     items.forEach(init);
     list.dataset.pages = Number(list.dataset.pages || 1) + 1;
@@ -221,7 +230,13 @@ const takePrefetched = url => {
 };
 
 let visitId = 0;
-async function visit(url, { method = "GET", body = null, push = true } = {}) {
+async function visit(url, options = {}) {
+  const writing = (options.method || "GET") !== "GET";
+  if (writing) saving = true;  // before the guard looks: saving is not leaving
+  try { return await navigate(url, options); } finally { if (writing) saving = false; }
+}
+
+async function navigate(url, { method = "GET", body = null, push = true } = {}) {
   if (leaveGuard?.() && !confirm("Leave without saving your changes?")) return;
   const id = ++visitId;
   document.body.classList.remove("menu-open");
@@ -429,15 +444,25 @@ document.addEventListener("input", e => {
 
 // ── live areas ────────────────────────────────────────────────────────────────────────────────
 
+function withWindow(href, pages) {
+  const url = new URL(href);
+  url.searchParams.set("window", pages);
+  return url.href.split("#")[0];
+}
+
 let polling = false;
 async function poll() {
   if (polling || document.hidden || !inApp() || !document.querySelector("[data-live][id]")) return;
   polling = true;
   const here = location.href, visiting = visitId;
+  // A list extended with "load more" is refreshed as the same number of pages: the answer then covers everything
+  // loaded, and a row is known to be gone, not just pushed down by new arrivals.
+  const pages = Math.max(1, ...[...document.querySelectorAll("[data-live][data-pages]")].map(el => Number(el.dataset.pages) || 1));
+  const target = pages > 1 ? withWindow(here, pages) : here;
   try {
-    const page = await load(here, { headers: { "X-Live": "1" } });
+    const page = await load(target, { headers: { "X-Live": "1" } });
     if (location.href !== here || visitId !== visiting) return;  // moved on meanwhile: this answer is stale
-    const doc = page.html && page.url === here.split("#")[0] && new DOMParser().parseFromString(page.html, "text/html");
+    const doc = page.html && page.url === target.split("#")[0] && new DOMParser().parseFromString(page.html, "text/html");
     document.querySelectorAll(".live-pill").forEach(p => p.classList.toggle("paused", !doc));
     if (!doc) return;
     doc.querySelectorAll("[data-live][id]").forEach(fresh => {
@@ -468,18 +493,37 @@ async function poll() {
   }
 }
 
-// A list with more pages loaded than the server sends: update its rows in place, add new ones on top.
+// A list with more pages loaded: the answer, the first pages of the list as it is now, is merged into it. Its rows are
+// updated in place and put on top in the server's order. A row the answer no longer shows goes only when the answer
+// proves it: it sat above a row the answer does show (the answer starts at the top, so it would be there too).
+// Anything else stays. A row just pushed down by new arrivals has no such proof and is kept, a row below the answer's
+// reach is not judged, and an answer that shares no row with the list removes nothing (review v003 R04).
 function mergeList(old, fresh) {
-  const first = old.querySelector(":scope > [data-key]");
-  fresh.querySelectorAll(":scope > [data-key]").forEach(item => {
-    const existing = old.querySelector(`:scope > [data-key="${item.dataset.key}"]`);
-    if (existing) {
-      if (existing.innerHTML !== item.innerHTML) { existing.replaceWith(item); init(item); }
-    } else {
-      old.insertBefore(item, first);
-      init(item);
-      item.classList.add("fresh");
+  const key = el => el.dataset.key;
+  const oldItems = [...old.querySelectorAll(":scope > [data-key]")];
+  const freshItems = [...fresh.querySelectorAll(":scope > [data-key]")];
+  const freshKeys = new Set(freshItems.map(key));
+  const had = new Set(oldItems.map(key));
+  let anchor = 0;  // how far down the list the answer reaches: after its last row that the list already has
+  oldItems.forEach((el, i) => { if (freshKeys.has(key(el))) anchor = i + 1; });
+  // An empty answer means nothing matches at all (the first page is empty), so every row goes.
+  if (!freshItems.length) anchor = oldItems.length;
+  const gone = new Set(oldItems.slice(0, anchor).filter(el => !freshKeys.has(key(el))));
+  gone.forEach(el => el.remove());
+  const rest = oldItems.filter(el => !gone.has(el) && !freshKeys.has(key(el)));
+  const before = rest[0] || old.querySelector(":scope > [data-more]") || null;
+  freshItems.forEach(item => {
+    const existing = oldItems.find(el => key(el) === key(item));
+    let shown = existing;
+    if (!existing) {
+      shown = item;
+    } else if (existing.innerHTML !== item.innerHTML) {
+      existing.replaceWith(item);
+      shown = item;
     }
+    old.insertBefore(shown, before);
+    if (shown === item) init(item);
+    if (!had.has(key(item))) item.classList.add("fresh");
   });
 }
 

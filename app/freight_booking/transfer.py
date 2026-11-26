@@ -42,7 +42,7 @@ def use_report(db, pending):
         shutil.copyfile(current, _path("booking_report.previous.xlsx"))
     shutil.move(str(pending), current)
     with db:  # the worker fills on its next pass, not in an hour
-        db.execute("DELETE FROM setting WHERE key = 'fill_last_at'")
+        db.execute("DELETE FROM setting WHERE key = 'fill_last_at' OR key LIKE 'fill_last_at.%'")
     store.log_activity(db, "settings", "Booking Report uploaded: bookings are filled from it on the next pass",
                        actor="admin")
     flash("Booking Report saved. The bookings are filled from it on the worker's next pass (within minutes).",

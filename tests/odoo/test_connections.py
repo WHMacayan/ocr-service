@@ -106,6 +106,7 @@ def test_the_old_single_connection_becomes_production_with_its_history(db, tmp_p
                        [("odoo_url", "http://katana.local"), ("odoo_db", "1103"), ("odoo_user", "admin"),
                         ("odoo_api_key", store.encrypt(db, "abc0e6a"))])
 
+    store._PREPARED.clear()  # the upgrade runs when the service starts again, not on every connection
     again = store.connect()
     [moved] = store.connections(again)
     assert (moved["name"], moved["url"], moved["database"], moved["login"], moved["api_key"]) == (

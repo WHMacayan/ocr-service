@@ -199,11 +199,12 @@ def test_unknown_vendor_waits_and_no_number_never_reaches_odoo():
     assert len(odoo.rows("b2b.ocr.scraped.bill")) == 1
 
 
-def test_no_bill_no_po_is_ready_for_po():
+def test_no_bill_no_po_waits_with_a_note():
     odoo = FakeOdoo()
     matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
     _s, _n, scraped_id = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-9"))
-    assert odoo.rows("b2b.ocr.scraped.bill")[scraped_id]["state"] == "ready_for_po"
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
+    assert row["state"] == "waiting" and row["match_notes"]
 
 
 def test_no_bill_falls_back_to_the_purchase_order_and_then_its_bill():
@@ -278,7 +279,7 @@ def test_vendor_is_found_by_the_mappings_printed_name():
     _s, _n, scraped_id = matcher.take(doc("supplier_invoice", sender="ar@sentury.com", invoice_number="F26-1",
                                           vendor_name="SENTURY TIRE (THAILAND) CO.,LTD"))
     row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
-    assert row["partner_id"] == 7 and row["state"] == "ready_for_po"
+    assert row["partner_id"] == 7 and row["state"] == "waiting"
 
 
 def test_bill_still_without_vendor_is_resolved_again_by_a_later_document():
@@ -292,7 +293,7 @@ def test_bill_still_without_vendor_is_resolved_again_by_a_later_document():
     matcher.mappings.append(mapping(role="factory", document_name="SENTURY TIRE", partner_id=7))
     matcher.take(invoice)
     row = odoo.rows("b2b.ocr.scraped.bill")[scraped_id]
-    assert row["partner_id"] == 7 and row["state"] == "ready_for_po"
+    assert row["partner_id"] == 7 and row["state"] == "waiting"
 
 
 def test_an_invoice_from_a_forwarder_makes_no_scraped_bill():
@@ -357,3 +358,40 @@ def test_the_po_whose_vendor_reference_is_the_booking_number_is_linked():
     _s, _n, booking_id = booker.take(doc("booking_confirmation", booking_number="94659872", containers=["FANU1107915"]))
     row = odoo.rows("b2b.ocr.booking")[booking_id]
     assert row["purchase_order_id"] == po and row["purchase_order_matched"]
+
+
+def test_a_bill_made_by_hand_that_names_the_order_is_its_bill():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
+    order = odoo.add("purchase.order", partner_id=7, company_id=1, state="purchase", name="PO0042",
+                     partner_ref="", amount_total=100.0, invoice_ids=[])
+    by_hand = odoo.add("account.move", partner_id=7, company_id=1, move_type="in_invoice", state="posted",
+                       ref="OTHER-1", invoice_origin="PO0042", display_name="BILL/7", amount_total=100.0)
+    scraped = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-9",
+                               po_numbers=["PO0042"], amount_total=100.0, currency="USD"))[2]
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped]
+    assert row["state"] == "bill_confirmed" and row["bill_id"] == by_hand and row["purchase_id"] == order
+
+    # two bills made by hand name the order: a person chooses
+    other = odoo.add("purchase.order", partner_id=7, company_id=1, state="purchase", name="PO0050",
+                     partner_ref="", amount_total=5.0, invoice_ids=[])
+    for ref in ("A", "B"):
+        odoo.add("account.move", partner_id=7, company_id=1, move_type="in_invoice", state="draft", ref=ref,
+                 invoice_origin="PO0050", display_name=f"BILL/{ref}", amount_total=5.0)
+    scraped = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-10",
+                               po_numbers=["PO0050"]))[2]
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped]
+    assert row["state"] == "needs_review" and row["purchase_id"] == other and "choose one" in row["match_notes"]
+
+
+def test_a_bill_naming_a_longer_order_number_is_not_this_orders_bill():
+    odoo = FakeOdoo()
+    matcher = make_matcher(odoo, [mapping(role="factory", sender_domain="factory.cn", partner_id=7)])
+    order = odoo.add("purchase.order", partner_id=7, company_id=1, state="purchase", name="P6632",
+                     partner_ref="", amount_total=1.0, invoice_ids=[])
+    odoo.add("account.move", partner_id=7, company_id=1, move_type="in_invoice", state="draft", ref="X",
+             invoice_origin="P66325", display_name="BILL/1", amount_total=1.0)
+    scraped = matcher.take(doc("supplier_invoice", sender="ar@factory.cn", invoice_number="INV-1",
+                               po_numbers=["P6632"]))[2]
+    row = odoo.rows("b2b.ocr.scraped.bill")[scraped]
+    assert row["state"] == "po_found" and row["purchase_id"] == order and not row["bill_id"]

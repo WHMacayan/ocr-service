@@ -9,6 +9,7 @@ A list that is the record of what happened (emails, activity) can be exported, n
 
 import json
 from datetime import datetime
+import hashlib
 from io import BytesIO
 
 from flask import abort, flash, g, redirect, render_template, request, send_file, url_for
@@ -165,8 +166,10 @@ def data_import(key):
             "step": "upload", "writes_to": None, "error": None}
     if not pending:
         return render_template("data/import.html", **page)
+    raw_pending = pending.read_bytes()
+    page["digest"] = hashlib.sha256(raw_pending).hexdigest()  # Apply must name the file whose mapping was tested (F17)
     try:
-        headers, rows = read_table(pending.read_bytes(), pending.name)
+        headers, rows = read_table(raw_pending, pending.name)
     except ValueError as exc:
         _discard(key)
         flash(str(exc), "error")
@@ -190,6 +193,9 @@ def data_import(key):
     mapping = taken
     page.update(step="map", headers=headers, rows=rows[:3], columns=columns, mapping=mapping, plan=None, result=None,
                 skip=bool(form.get("skip")), total=len(rows))
+    if action == "apply" and request.form.get("digest") != page["digest"]:
+        flash("The file was replaced after you chose its columns. Check the columns, test it, then import.", "error")
+        return render_template("data/import.html", **page)
     if action in ("test", "apply"):
         if not any(mapping):
             flash("Map at least one column.", "error")
