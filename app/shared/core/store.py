@@ -12,7 +12,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 from app.shared.core import defaults
-from app.shared.core.settings import SECRET_SETTINGS
+from app.shared.core.settings import SECRET_SETTINGS, SETTING_RANGES, setting_problem
 
 SCHEMA = Path(__file__).with_name("schema.sql")
 SECRET_MAILBOX_FIELDS = ("client_secret", "refresh_token", "access_token")
@@ -53,6 +53,22 @@ def connect(path=None):
     db.fernet = _fernet(path.parent)
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA foreign_keys=ON")
+    # The schema, added columns, record-time triggers and defaults are brought up to date once per database file
+    # for each process, not on every page view: doing it each time took a write lock for every read request, so
+    # a slow job could hold up the pages and the Cancel button (review F12). Another process that changes the
+    # schema is a new release, which restarts this one.
+    prepared = (str(path.resolve()), os.stat(path).st_ino)
+    if prepared in _PREPARED:
+        return db
+    _prepare(db)
+    _PREPARED.add(prepared)
+    return db
+
+
+_PREPARED = set()
+
+
+def _prepare(db):
     db.executescript(SCHEMA.read_text())
     with db:
         # One connection at a time: the triggers below are dropped and made again, and two requests
@@ -66,7 +82,6 @@ def connect(path=None):
                        defaults.DEFAULT_SETTINGS.items())
         _upgrade_prompts(db)
         _move_single_connection(db)
-    return db
 
 
 # The service's own records, with when each was created and last modified (UTC), kept by triggers so no
@@ -153,7 +168,9 @@ ADDED_COLUMNS = [("message", "processed_at", "TEXT"), ("odoo_change", "values_js
                  ("payables_setting", "export_next", "TEXT"), ("payables_setting", "export_last_at", "TEXT"),
                  ("payables_setting", "export_last_run", "TEXT"),
                  # Which AI model and instructions made the file's reading (extract.reading_version).
-                 ("file", "read_with", "TEXT")]
+                 ("file", "read_with", "TEXT"),
+                 # The pages/characters limits that reading was made with (extract.reading_limits).
+                 ("file", "read_limits", "TEXT")]
 
 # The one Odoo connection the Settings page held before there were several.
 OLD_CONNECTION_SETTINGS = ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key")
@@ -204,11 +221,19 @@ def get_setting(db, key, cast=str):
     if not row or row["value"] in (None, ""):
         return None
     value = decrypt(db, row["value"]) if key in SECRET_SETTINGS else row["value"]
+    if key in SETTING_RANGES and setting_problem(key, value):
+        # Out of range (saved by an older version or written to the database directly): use the default, or
+        # nothing, so a worker never acts on it.
+        default = defaults.DEFAULT_SETTINGS.get(key)
+        return cast(default) if default is not None else None
     return cast(value)
 
 
 def set_setting(db, key, value):
     value = "" if value is None else str(value)
+    problem = setting_problem(key, value)
+    if problem:
+        raise ValueError(problem)
     if key in SECRET_SETTINGS:
         value = encrypt(db, value)
     with db:
@@ -357,10 +382,11 @@ def refresh_messages(db, message_ids=None):
             shown = min(db.execute("SELECT * FROM file_target WHERE file_id = ?", (file["id"],)).fetchall(),
                         key=lambda t: ranks.get(t["connection_id"], len(ranks)), default=None)
             if shown:
-                # A record id means something only in its own database: one from a connection that is off (the
-                # 1111 test run) is not a record of the one the pages read (1115), whatever its number.
+                # A record id means something only in its own database, and the pages link every id through the
+                # reference connection: an id from any other connection (off, or on but not the reference) is not
+                # a record there, whatever its number. With no target in the reference the file points at nothing.
                 db.execute("UPDATE file SET state = ?, note = ?, odoo_id = ? WHERE id = ?",
-                           (shown["state"], shown["note"], shown["odoo_id"] if shown["connection_id"] in ranks else None,
-                            file["id"]))
+                           (shown["state"], shown["note"],
+                            shown["odoo_id"] if on and shown["connection_id"] == on[0]["id"] else None, file["id"]))
             else:  # its records were cleared (a clean start): it points at nothing until processed again
                 db.execute("UPDATE file SET odoo_id = NULL WHERE id = ?", (file["id"],))

@@ -145,4 +145,4 @@ def run_forever():
             run_once(db)
         except Exception:
             _logger.exception("Pass failed; trying again after the pause")
-        time.sleep(store.get_setting(db, "poll_seconds", int) or DEFAULT_POLL_SECONDS)
+        time.sleep(max(1, store.get_setting(db, "poll_seconds", int) or DEFAULT_POLL_SECONDS))

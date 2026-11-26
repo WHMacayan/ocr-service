@@ -8,7 +8,7 @@ from app.shared.web import bp
 from app.shared.web.base import audit
 from app.shared.web.forms import describe_changes, Field, parse_form, secret_hints, sections
 from app.shared.core import store
-from app.shared.core.settings import SETTING_GROUPS, SETTINGS
+from app.shared.core.settings import SETTING_GROUPS, SETTINGS, setting_problem
 
 
 # ── settings ─────────────────────────────────────────────────────────
@@ -20,6 +20,7 @@ SETTING_FIELDS = [Field(s.key, s.label, s.kind, help=s.help, group=s.group, tip=
 def settings():
     if request.method == "POST":
         values, error = parse_form(SETTING_FIELDS, request.form)
+        error = error or next((p for p in (setting_problem(k, v) for k, v in values.items()) if p), None)
         if error:
             flash(error, "error")
         else:

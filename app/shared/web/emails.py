@@ -18,6 +18,7 @@ def home():
 # ── emails ───────────────────────────────────────────────────────────
 
 EMAILS_PAGE = 100
+MAX_WINDOW = 20  # pages a refresh may ask for at once
 # Group By: the column offered, and the SQL its emails are grouped and counted on.
 EMAIL_GROUPS = {"state": "State", "mailbox": "Mailbox", "sender": "Sender", "day": "Day received"}
 GROUP_SQL = {"state": "m.state", "mailbox": "b.name", "sender": "m.sender", "day": "date(m.received)"}
@@ -48,6 +49,8 @@ def email_list():
     state = request.args.get("state")
     q = (request.args.get("q") or "").strip()
     offset = max(request.args.get("offset", 0, type=int), 0)
+    # ?window=N: the first N pages in one answer, which is how the page refreshes a list that "load more" has extended.
+    window = min(max(request.args.get("window", 1, type=int), 1), MAX_WINDOW)
     groupby = group_by(EMAIL_GROUPS, "state")
     chosen = request.args.get("groupby") if request.args.get("groupby") in (GROUP_NONE, *EMAIL_GROUPS) else None
     where, args = search.email_where(search.parse(q))
@@ -58,10 +61,11 @@ def email_list():
         groups = email_groups(groupby, where, args)
         shown = [r for grp in groups for r in grp["rows"] or []]
     else:
+        size = EMAILS_PAGE * window
         rows = g.db.execute(f"{EMAIL_SQL}{where} ORDER BY m.received DESC, m.id DESC LIMIT ? OFFSET ?",
-                            (*args, EMAILS_PAGE + 1, offset)).fetchall()
-        shown = rows[:EMAILS_PAGE]
-        more = offset + EMAILS_PAGE if len(rows) > EMAILS_PAGE else None
+                            (*args, size + 1, offset)).fetchall()
+        shown = rows[:size]
+        more = offset + size if len(rows) > size else None
         groups = group_rows(shown)
     counts = dict(g.db.execute("SELECT state, COUNT(*) FROM message GROUP BY state").fetchall())
     return {"rows": shown, "groups": groups, "more": more, "offset": offset,

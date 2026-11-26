@@ -141,3 +141,27 @@ def test_setup_lists_group_by_a_choice(client, db):
     default = client.get("/vendor-mappings/").get_data(as_text=True)         # opens grouped on the role
     assert 'aria-current="true">Role</a>' in default and 'data-group="' in default
     assert 'data-group=' not in client.get("/vendor-mappings/?groupby=none").get_data(as_text=True)
+
+
+def test_clear_removes_a_freight_payables_mailboxs_emails_and_only_the_files_nothing_else_uses(client, db, tmp_path):
+    token = signed_in(client)
+    box = mailbox(db, name="Payables", purpose="freight_payables", status="success")
+    other = mailbox(db, name="Other payables", purpose="freight_payables")
+    mine, shared = tmp_path / "mine", tmp_path / "shared"
+    mine.write_bytes(b"%PDF-1.4 mine")
+    shared.write_bytes(b"%PDF-1.4 shared")
+    with db:
+        db.execute("INSERT INTO payables_message (id, mailbox_id, dedupe_key) VALUES (1, ?, 'a'), (2, ?, 'b')",
+                   (box["id"], other["id"]))
+        db.execute("INSERT INTO payables_file (id, sha256, path, kind, size) VALUES (1, 'm', ?, 'pdf', 1), (2, 's', ?, 'pdf', 1)",
+                   (str(mine), str(shared)))
+        db.execute("INSERT INTO payables_message_file (message_id, file_id) VALUES (1, 1), (1, 2), (2, 2)")
+
+    page = client.post(f"/mailboxes/{box['id']}/clear", data={"csrf": token}, follow_redirects=True)
+
+    assert "Cleared: 1 emails" in page.get_data(as_text=True)
+    assert [r[0] for r in db.execute("SELECT id FROM payables_message")] == [2]
+    assert [r[0] for r in db.execute("SELECT id FROM payables_file")] == [2]  # still used by the other mailbox
+    assert [tuple(r) for r in db.execute("SELECT message_id, file_id FROM payables_message_file")] == [(2, 2)]
+    assert not mine.exists() and shared.exists()
+    assert store.mailbox(db, box["id"])["status"] == "new"

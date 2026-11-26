@@ -15,7 +15,7 @@ import hashlib
 from collections import Counter
 
 from app.shared.core import store
-from app.shared.mail.ingest import MailboxSync, dedupe_key, domain_of, parse_graph_datetime, sender_of
+from app.shared.mail.ingest import AttachmentDownloadError, MailboxSync, dedupe_key, domain_of, parse_graph_datetime, sender_of
 from app.payables.kinds import MAX_FILE_BYTES, MIN_INLINE_IMAGE_BYTES, file_kind
 
 ITEM_ATTACHMENT = "#microsoft.graph.itemAttachment"
@@ -27,6 +27,12 @@ def is_skipped_sender(mailbox, msg):
 
 
 class PayablesSync(MailboxSync):
+    def _message_key(self, msg):
+        return dedupe_key(msg, self.mailbox["purpose"])  # its own tables, no company split
+
+    def _note_sources(self, messages, keys):
+        pass
+
     def _known_keys(self, keys):
         if not keys:
             return set()
@@ -55,10 +61,9 @@ class PayablesSync(MailboxSync):
                 try:
                     kept = self._download(msg["id"], att, skipped)
                 except Exception as exc:
-                    counters["invalid"] += 1
-                    skipped.append(f"{att.get('name')}: download failed - {exc}")
+                    # Not saved: the email is read again next run rather than kept without this file (review F01).
                     self.log(f"  {att.get('name')}: download failed - {exc}")
-                    continue
+                    raise AttachmentDownloadError(f"{att.get('name') or 'attachment'}: download failed - {exc}") from exc
                 if kept:
                     files.append(kept)
                 else:

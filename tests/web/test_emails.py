@@ -105,3 +105,28 @@ def test_the_email_list_opens_grouped_by_state_and_no_grouping_is_a_choice(clien
     flat = client.get("/messages?groupby=none").get_data(as_text=True).split('id="detail"')[0]
     assert "Mail 2" in flat and "data-group=" not in flat and 'name="groupby" value="none"' in flat
     assert 'href="/messages?groupby=none"' in flat                                     # its links keep it ungrouped
+
+
+def test_a_window_answers_the_first_pages_at_once(client, db, monkeypatch):
+    """The page refreshes a list that 'load more' extended by asking for as many pages as it holds (v003 R04)."""
+    from app.shared.web import emails
+    from fakes import mailbox, signed_in
+    monkeypatch.setattr(emails, "EMAILS_PAGE", 3)
+    signed_in(client)
+    box = mailbox(db)
+    with db:
+        for n in range(1, 11):
+            db.execute("INSERT INTO message (mailbox_id, dedupe_key, subject, received) VALUES (?, ?, ?, ?)",
+                       (box["id"], f"k{n}", f"Mail {n}", f"2026-10-{n:02d} 08:00:00"))
+
+    def keys(url):
+        page = client.get(url + ("&" if "?" in url else "?") + "groupby=none").get_data(as_text=True)
+        import re
+        return re.findall(r'data-key="(\d+)"', page), 'data-more="' in page
+
+    first, more = keys("/messages")
+    assert len(first) == 3 and more
+    window, more = keys("/messages?window=2")
+    assert window[:3] == first and len(window) == 6 and more   # the first two pages, one answer
+    everything, more = keys("/messages?window=20")
+    assert len(everything) == 10 and not more
