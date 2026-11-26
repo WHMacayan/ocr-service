@@ -1,8 +1,8 @@
 """Scraped Bills: one b2b.ocr.scraped.bill per commercial invoice (vendor + invoice number; never
 from a vendor mapped as a forwarder), matched automatically: the vendor's bill (posted, then draft);
-when none fits, the purchase order, then that order's bill; when no order fits either, the bill is
-parked as Ready to Create PO. The service never creates a purchase order (parked idea, see README)
-and only suggests: confirming the bill or order found is a button in Odoo.
+when none fits, the purchase order, then that order's bill, or a bill made by hand that names the order;
+when nothing fits, the bill waits with a note and is matched again. The service reads and matches only: it
+never creates a purchase order or a bill, and confirming what it found is a button in Odoo.
 """
 
 import re
@@ -157,6 +157,10 @@ class BillMatcher:
         shipment = _keys(bill["master_bl"]) | _keys(bill["house_bl"]) | _keys(bill["container_numbers"])
         # Already billed: the vendor's posted bill carries this invoice number.
         posted = self._posted(vendor, number)
+        if len(posted) > 1:  # two posted bills with this number: a person decides which (review F04)
+            return self._write(bill, dict(cleared, state="needs_review", posted_bill_warning=False, match_notes=(
+                f"Several posted bills carry this invoice number ({', '.join(m['display_name'] for m in posted)}): "
+                f"choose one.")))
         if posted:
             return self._write(bill, dict(cleared, state="bill_confirmed", bill_id=posted[0]["id"],
                                           purchase_id=self._order_of(posted[0]["id"]),
@@ -206,14 +210,14 @@ class BillMatcher:
                 return self._write(bill, dict(values, state="needs_review", purchase_id=orders[0]["id"], match_notes=(
                     f"Duplicate purchase order: {orders[0]['name']} is already matched to scraped bill "
                     f"{', '.join(o['name'] for o in other)}.")))
-            return self._write(bill, self._with_po_bill(values, bill, orders[0], number))
+            return self._write(bill, self._with_po_bill(values, bill, orders[0], number, vendor))
         if orders:
             return self._write(bill, dict(values, state="needs_review", match_notes=(
                 f"Duplicate purchase orders {', '.join(o['name'] for o in orders)} fit: choose one.")))
-        return self._write(bill, dict(values, state="ready_for_po",
-                                      match_notes="No draft bill or purchase order of this vendor fits."))
+        return self._write(bill, dict(values, state="waiting",
+                                      match_notes="No bill or purchase order of this vendor fits yet."))
 
-    def _with_po_bill(self, values, bill, order, number):
+    def _with_po_bill(self, values, bill, order, number, vendor):
         """The purchase order found, with its vendor bill when it has one: a draft is found for
         confirming, a posted one means the invoice is already billed."""
         values = dict(values, state="po_found", purchase_id=order["id"],
@@ -221,11 +225,27 @@ class BillMatcher:
         moves = [m for m in self.odoo.call("account.move", "read", self._po_bills(order["id"]),
                                            ["ref", "display_name", "state", "move_type", "amount_total"])
                  if m["move_type"] == "in_invoice" and m["state"] in ("draft", "posted")]
-        # This invoice's own bill first, else the order's only bill.
-        own = [m for m in moves if normalize_identifier(m["ref"]) == number] or (moves if len(moves) == 1 else [])
+        # This invoice's own bill (its reference) first. Without one, the order's only bill counts when it is
+        # a draft to confirm, or when the order's own vendor reference is this invoice number; a posted bill
+        # with another reference on an order found some other way is another invoice, never this one's.
+        by_invoice = normalize_identifier(order.get("partner_ref")) == number
+        own = [m for m in moves if normalize_identifier(m["ref"]) == number] or (
+            moves if len(moves) == 1 and (moves[0]["state"] == "draft" or by_invoice) else [])
+        if not moves:  # no bill is linked to the order: one made by hand may still be its bill
+            by_hand = self._manual_bills(vendor, order, bill)
+            if len(by_hand) > 1:
+                return dict(values, state="needs_review", match_notes=(
+                    f"Bills made by hand name purchase order {order['name']} "
+                    f"({', '.join(m['display_name'] for m in by_hand)}): choose one."))
+            moves = own = by_hand
+        if len(own) > 1:
+            return dict(values, state="needs_review", match_notes=(
+                f"Purchase order {order['name']} has several bills with this invoice number "
+                f"({', '.join(m['display_name'] for m in own)}): choose one."))
         if not own:
             if moves:
-                values["match_notes"] = (f"Purchase order {order['name']} has several bills "
+                values["match_notes"] = (f"Purchase order {order['name']} has "
+                                         f"{'several bills' if len(moves) > 1 else 'a bill with another reference'} "
                                          f"({', '.join(m['display_name'] for m in moves)}): choose one.")
             return values
         move = own[0]
@@ -234,6 +254,23 @@ class BillMatcher:
                         match_notes=self._total_note(bill, move["amount_total"]))
         return dict(values, state="bill_confirmed", bill_id=move["id"], match_notes=(
             f"Already billed: {move['display_name']} is the bill of purchase order {order['name']}."))
+
+    def _manual_bills(self, vendor, order, bill):
+        """The vendor's draft or posted bills made by hand (no purchase order line) that name this order: its name
+        in their origin, or its name or the vendor's reference for it as their reference. A bill another scraped
+        bill already holds is left out."""
+        refs = [order["name"]] + ([order["partner_ref"]] if order.get("partner_ref") else [])
+        clauses = [("invoice_origin", "ilike", order["name"])] + [("ref", "=ilike", ref) for ref in refs]
+        found = self.odoo.search_read(
+            "account.move", vendor + [("move_type", "=", "in_invoice"), ("state", "in", ("draft", "posted"))]
+            + ["|"] * (len(clauses) - 1) + clauses, ["ref", "invoice_origin", "display_name", "state", "amount_total"])
+        # The database narrows by substring (P6632 is inside P66325); the exact comparison decides.
+        names = {normalize_identifier(ref) for ref in refs}
+        found = [m for m in found if names & ({normalize_identifier(m["ref"])} | _keys(m["invoice_origin"]))]
+        held = {m2o_id(b["bill_id"]) for b in self.odoo.search_read(
+            SCRAPED_BILL, [("id", "!=", bill["id"]), ("bill_id", "in", [m["id"] for m in found])], ["bill_id"])
+        } if found else set()
+        return [m for m in found if m["id"] not in held and not self._order_of(m["id"])]
 
     def _order_of(self, move_id):
         """The one purchase order a vendor bill's lines come from, else False (none, or several)."""

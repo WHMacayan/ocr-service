@@ -86,7 +86,14 @@ class Odoo:
             raise RuntimeError("No Odoo connection is switched on. Turn one on in Settings.")
         return cls.from_connection(db, connection)
 
+    def _release(self):
+        """End the local transaction before going out to Odoo: a write transaction held across a remote call blocks
+        every other writer (the pages, the other workers) for as long as Odoo takes (review v003 R03)."""
+        if self.activity_db is not None and self.activity_db.in_transaction:
+            self.activity_db.commit()
+
     def call(self, model, method, *args, **kwargs):
+        self._release()
         result = self._object.execute_kw(self.db, self.uid, self.api_key, model, method,
                                          list(args), kwargs)
         if self.activity_db is not None and method in WRITE_METHODS:
@@ -129,7 +136,8 @@ class Odoo:
         link = f"{self.url}/web#model={model}&id={ids[0]}&view_type=form" if len(ids) == 1 and method != "unlink" else None
         store.log_activity(self.activity_db, "odoo", summary, detail, actor="worker", link=link)
         if self.source:
-            # No commit here: it lands with the pipeline's own commit for this email.
+            # Committed at once, with the log entry: the remote write has happened, so its record must not wait for
+            # the end of the email (and must not hold the write lock through the next call to Odoo).
             self.activity_db.executemany(
                 "INSERT INTO odoo_change (message_id, file_id, connection_id, action, model, record_id, label, detail,"
                 " link, values_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -138,6 +146,7 @@ class Odoo:
                   f"{self.url}/web#model={model}&id={record_id}&view_type=form" if method != "unlink" else None,
                   json.dumps(values, default=str) if values else None)
                  for record_id in ids])
+            self.activity_db.commit()
 
     def search_read(self, model, domain, fields, **kwargs):
         return self.call(model, "search_read", domain, fields=fields, **kwargs)

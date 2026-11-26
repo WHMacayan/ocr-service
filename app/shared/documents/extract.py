@@ -50,6 +50,24 @@ def reading_version(reading, settings):
     return hashlib.sha256(basis.encode()).hexdigest()[:16]
 
 
+def reading_limits(settings):
+    """How much of a file a reading looked at, ``pages/characters``: stored with the reading (file.read_limits)."""
+    return f"{int(settings['max_pages'])}/{int(settings['max_chars'])}"
+
+
+def limits_raised(used, settings):
+    """Whether the limits now allow more of a file than the ones its stored reading was made with (review F18): a
+    reading cut short by a lower limit is read again once the limit is raised. Lowering a limit does not
+    throw readings away, and a reading from before the limits were recorded (``used`` empty) stands."""
+    if not used:
+        return False
+    try:
+        pages, chars = (int(part) for part in used.split("/"))
+    except ValueError:
+        return False
+    return int(settings["max_pages"]) > pages or int(settings["max_chars"]) > chars
+
+
 def read_file(raw, reading, settings):
     """``(doc_class, values)`` of a saved file; ``(None, {})`` when it has no text. ``reading``: a job's Reading, or
     its mailbox purpose.

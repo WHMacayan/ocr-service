@@ -84,7 +84,9 @@ def record(key, record_id):
                 error = "Not saved: " + " ".join(problems)
         if error:
             flash(error, "error")
-            current.update(values)
+            # A number that could not be read leaves no parsed values: show what was typed instead (never a secret).
+            current.update(values or {f.name: request.form.get(f.name, "") for f in form.fields
+                                      if f.kind != "secret" and f.name in request.form})
         else:
             changes = describe_changes(form.fields, current if record_id else {}, values)
             is_new = not record_id
@@ -186,10 +188,24 @@ def clear_mailbox(mailbox_id):
         return redirect(link)
     files = g.db.execute("SELECT f.path FROM file f JOIN message m ON m.id = f.message_id WHERE m.mailbox_id = ?",
                          (mailbox_id,)).fetchall()
+    # Freight Payables keeps its mail in its own tables (review F19): its emails and their file links go, and a
+    # file only when no other payables email still has it.
+    payables_files = g.db.execute(
+        "SELECT DISTINCT f.id, f.path FROM payables_file f JOIN payables_message_file x ON x.file_id = f.id "
+        "JOIN payables_message m ON m.id = x.message_id WHERE m.mailbox_id = ?", (mailbox_id,)).fetchall()
     with g.db:
         emails = g.db.execute("SELECT COUNT(*) FROM message WHERE mailbox_id = ?", (mailbox_id,)).fetchone()[0]
+        emails += g.db.execute("SELECT COUNT(*) FROM payables_message WHERE mailbox_id = ?", (mailbox_id,)).fetchone()[0]
+        g.db.execute("DELETE FROM payables_message_file WHERE message_id IN "
+                     "(SELECT id FROM payables_message WHERE mailbox_id = ?)", (mailbox_id,))
+        g.db.execute("DELETE FROM payables_message WHERE mailbox_id = ?", (mailbox_id,))
+        for file in payables_files:
+            if not g.db.execute("SELECT 1 FROM payables_message_file WHERE file_id = ?", (file["id"],)).fetchone():
+                g.db.execute("DELETE FROM payables_file WHERE id = ?", (file["id"],))
+                Path(file["path"]).unlink(missing_ok=True)
         g.db.execute("DELETE FROM file WHERE message_id IN (SELECT id FROM message WHERE mailbox_id = ?)",
                      (mailbox_id,))
+        g.db.execute("DELETE FROM message_source WHERE mailbox_id = ?", (mailbox_id,))
         g.db.execute("DELETE FROM message WHERE mailbox_id = ?", (mailbox_id,))
         g.db.execute("DELETE FROM run WHERE mailbox_id = ?", (mailbox_id,))
     store.update_mailbox(g.db, mailbox_id, {"fetch_resume_from": None, "status": "new", "last_sync": None,

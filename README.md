@@ -52,8 +52,6 @@ record of which emails were read.
 
 ## Parked ideas
 
-- **Create the vendor purchase order from a scraped bill.** Not built. A bill with no matching bill or
-  purchase order stays in Ready to Create PO for a person; the service never creates ERP records.
 - **Run the service on PostgreSQL instead of SQLite.** Not started. Decided so far: its own `ocr-db`
   container, the existing SQLite data moved over by a one-time command (the SQLite file kept), tests on a
   real Postgres, work on its own branch. Required first: a rollback path back to SQLite.

@@ -29,7 +29,7 @@
     <div class="card-body">
       <div class="actions"><a class="btn secondary" href="{{ url_for('web.export_setup') }}">{{ icon("file") }} Download setup (Excel)</a></div>
       <div style="margin-top:14px">
-      {% if previews.setup %}{{ changes(previews.setup) }}{{ decide("setup", "Import these changes") }}
+      {% if previews.setup %}{{ changes(previews.setup) }}{{ decide("setup", "Import these changes", previews.setup.digest) }}
       {% else %}{{ upload("setup", "Upload setup workbook", ".xlsx") }}{% endif %}
       </div>
     </div>
@@ -41,7 +41,7 @@
     <div class="card-body">
       <div class="actions"><a class="btn secondary" href="{{ url_for('web.export_backup') }}">{{ icon("file") }} Download backup</a></div>
       <div style="margin-top:14px">
-      {% if previews.restore %}{{ changes(previews.restore) }}{{ decide("restore", "Restore this backup") }}
+      {% if previews.restore %}{{ changes(previews.restore) }}{{ decide("restore", "Restore this backup", previews.restore.digest) }}
       {% else %}{{ upload("restore", "Upload backup to restore", ".json") }}{% endif %}
       </div>
     </div>

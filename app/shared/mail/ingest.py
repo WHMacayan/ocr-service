@@ -69,6 +69,18 @@ def file_key(sha, purpose):
     return sha if _unprefixed(purpose) else f"{purpose}:{sha}"
 
 
+def delivery_key(base, mailbox):
+    """The key a new email or file is stored under: ``base`` and the company of the mailbox that received it, always
+    (``<base>#company<id>``). A company's delivery is its own row whichever other rows exist, so clearing or
+    deleting another company's mailbox never changes it (review v003 R01). Rows saved before keep their plain
+    ``base`` key; ``legacy_owned`` finds them by the company of the mailbox they came from."""
+    return f"{base}#company{mailbox.get('company_id') or 0}"
+
+
+def plain_key(key):
+    return key.rsplit("#company", 1)[0]
+
+
 def is_valid_email(msg):
     if not msg.get("id"):
         return False, "missing message id"
@@ -209,6 +221,10 @@ def messages_url(mailbox):
 
 # ── one run over one mailbox ─────────────────────────────────────────
 
+class AttachmentDownloadError(Exception):
+    """An attachment could not be downloaded: the email is not saved and is read again next run."""
+
+
 class MailboxSync:
     def __init__(self, db, graph, mailbox, now=None):
         self.db = db
@@ -219,6 +235,15 @@ class MailboxSync:
         self.started = time.monotonic()
         self.lines = []
         self.mailbox_values = {}
+        self.earliest_failure = None  # received time of the earliest email this run could not save
+        self._known_rows = {}         # delivery key -> (message id, mailbox id) of the emails stored already
+        self._duplicate_files = []    # (file id, filename) of files of the email being saved that are stored already
+
+    def _message_key(self, msg):
+        return delivery_key(dedupe_key(msg, self.mailbox["purpose"]), self.mailbox)
+
+    def _file_key(self, sha):
+        return delivery_key(file_key(sha, self.mailbox["purpose"]), self.mailbox)
 
     # activity log, kept on the run row
 
@@ -280,18 +305,26 @@ class MailboxSync:
         one not saved (``next_message``), or starts again when the stop came while listing the mailbox."""
         if next_message is not None:
             received = parse_graph_datetime(next_message.get("receivedDateTime"))
+            # An earlier email that failed is still unsaved: never step past it.
+            if self.earliest_failure and (not received or self.earliest_failure < received):
+                received = self.earliest_failure
             if received:
                 fetch_values["fetch_resume_from"] = received
         else:
             fetch_values = {}
+            if self.earliest_failure:
+                fetch_values["fetch_resume_from"] = self.earliest_failure
+        failed = counters["failed"]
         self.log(f"Run cancelled. {counters['created_emails']} email(s) were saved before it stopped; "
-                 "the next read carries on from there.")
+                 "the next read carries on from there."
+                 + (f" {failed} email(s) failed earlier in this run and are read again." if failed else ""))
         self.flush({"status": "partial", "finished_at": self._stamp(),
                     "attachments": counters["attachments"], "documents_created": counters["created"],
                     "duplicates": counters["duplicates"], "invalid": counters["invalid"],
                     "failed": counters["failed"]})
         store.update_mailbox(self.db, self.mailbox["id"], dict(
-            fetch_values, status="partial", last_sync=self._stamp(), cancel_requested=0, last_error=None))
+            fetch_values, status="partial", last_sync=self._stamp(), cancel_requested=0,
+            last_error=self.mailbox_values.get("last_error")))
         store.log_activity(self.db, "processing", f"Read of mailbox {self.mailbox['name']} cancelled",
                            f"{counters['created_emails']} new email(s) saved before it stopped.",
                            level="warning", link=f"/mailboxes/{self.mailbox['id']}/runs")
@@ -318,11 +351,35 @@ class MailboxSync:
         self.flush()
 
     def _known_keys(self, keys):
+        """The delivery keys among ``keys`` already stored: under that key, or under the plain key of a row saved
+        before keys carried the company, by a mailbox of this company. Notes where each was stored."""
         if not keys:
             return set()
-        marks = ", ".join("?" * len(keys))
-        return {row["dedupe_key"] for row in self.db.execute(
-            f"SELECT dedupe_key FROM message WHERE dedupe_key IN ({marks})", keys)}
+        wanted = list(keys) + [plain_key(k) for k in keys]
+        company = self.mailbox.get("company_id") or 0
+        found = {}
+        for row in self.db.execute(
+                f"SELECT m.id, m.dedupe_key, m.mailbox_id, b.company_id FROM message m JOIN mailbox b ON b.id = m.mailbox_id "
+                f"WHERE m.dedupe_key IN ({', '.join('?' * len(wanted))})", wanted):
+            found[row["dedupe_key"]] = row
+        known = set()
+        self._known_rows = {}
+        for key in keys:
+            row = found.get(key) or (found.get(plain_key(key)) if (found.get(plain_key(key)) is not None and
+                                     (found[plain_key(key)]["company_id"] or 0) == company) else None)
+            if row is not None:
+                known.add(key)
+                self._known_rows[key] = (row["id"], row["mailbox_id"])
+        return known
+
+    def _note_sources(self, messages, keys):
+        """An email this mailbox sees that another mailbox of the company stored: kept as one more place it came from."""
+        with self.db:
+            for message, key in zip(messages, keys):
+                stored = self._known_rows.get(key)
+                if stored and stored[1] != self.mailbox["id"]:
+                    self.db.execute("INSERT OR IGNORE INTO message_source (message_id, mailbox_id, graph_message_id) "
+                                    "VALUES (?, ?, ?)", (stored[0], self.mailbox["id"], message.get("id")))
 
     def _has_stored_mail(self):
         return self.db.execute("SELECT 1 FROM message WHERE mailbox_id = ? LIMIT 1",
@@ -356,8 +413,9 @@ class MailboxSync:
             messages, next_link = self.graph.messages_page(url, params)
             pages += 1
             headers_read += len(messages)
-            keys = [dedupe_key(m, mailbox["purpose"]) for m in messages]
+            keys = [self._message_key(m) for m in messages]
             known = self._known_keys(keys)
+            self._note_sources(messages, keys)
 
             for message, key in zip(messages, keys):
                 last_seen = message.get("receivedDateTime") or last_seen
@@ -432,8 +490,11 @@ class MailboxSync:
                     else:
                         payloads.append(self.graph.attachment(msg["id"], att["id"]))
                 except Exception as exc:
-                    counters["invalid"] += 1
+                    # A download that failed is not an unsupported file: saving the email without it would
+                    # lose the file for good (the email is then known and never read again). Not saved,
+                    # the whole email is read again next run (review F01).
                     self.log(f"  {att.get('name')}: download failed - {exc}")
+                    raise AttachmentDownloadError(f"{att.get('name') or 'attachment'}: download failed - {exc}") from exc
             documents = self._save_files(payloads, skipped, counters)
 
         sender = sender_of(msg)
@@ -442,7 +503,7 @@ class MailboxSync:
                 "INSERT INTO message (mailbox_id, dedupe_key, graph_message_id, internet_message_id,"
                 " conversation_id, subject, sender, sender_domain, received, body_html,"
                 " skipped_attachments, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (self.mailbox["id"], dedupe_key(msg, self.mailbox["purpose"]), msg["id"],
+                (self.mailbox["id"], self._message_key(msg), msg["id"],
                  msg.get("internetMessageId"), msg.get("conversationId"), msg.get("subject") or "",
                  sender, domain_of(sender), parse_graph_datetime(msg.get("receivedDateTime")) or None,
                  (msg.get("body") or {}).get("content") or "", "\n".join(skipped) or None, state),
@@ -450,6 +511,10 @@ class MailboxSync:
             self.db.executemany(
                 "INSERT INTO file (message_id, filename, sha256, path) VALUES (?, ?, ?, ?)",
                 [(message_id, name, sha, path) for name, sha, path in documents])
+            # A file this company has already: its first email keeps it; this email is another place it came from.
+            self.db.executemany("INSERT OR IGNORE INTO file_source (file_id, message_id, filename) VALUES (?, ?, ?)",
+                                [(file_id, message_id, name) for file_id, name in self._duplicate_files])
+        self._duplicate_files = []
         counters["created"] += len(documents)
         counters["created_emails"] += 1
         return counters
@@ -480,11 +545,9 @@ class MailboxSync:
                 continue
             candidates.append((name, raw, hashlib.sha256(raw).hexdigest()))
 
-        purpose = self.mailbox["purpose"]
-        keys = [file_key(sha, purpose) for _name, _raw, sha in candidates]
-        stored = {row["sha256"] for row in self.db.execute(
-            f"SELECT sha256 FROM file WHERE sha256 IN ({', '.join('?' * len(keys))})", keys)
-        } if keys else set()
+        keys = [self._file_key(sha) for _name, _raw, sha in candidates]
+        stored = self._known_files(keys)
+        self._duplicate_files = []
 
         documents = []
         for (name, raw, sha), key in zip(candidates, keys):
@@ -492,8 +555,10 @@ class MailboxSync:
                 counters["duplicates"] += 1
                 skipped.append(f"{name}: already imported")
                 self.log(f"  {name}: already imported, not read again.")
+                if stored[key] is not None:
+                    self._duplicate_files.append((stored[key], name))
                 continue
-            stored.add(key)
+            stored[key] = None  # saved just now, in this email
             path = store.files_dir(self.db) / sha[:2] / sha
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(raw)
@@ -501,11 +566,35 @@ class MailboxSync:
             self.log(f"  {name}: saved.")
         return documents
 
+    def _known_files(self, keys):
+        """{delivery key: id of the stored file} for the keys already stored, as for emails (plain key of a file
+        saved before keys carried the company: when its email came by a mailbox of this company)."""
+        if not keys:
+            return {}
+        wanted = list(keys) + [plain_key(k) for k in keys]
+        company = self.mailbox.get("company_id") or 0
+        found = {}
+        for row in self.db.execute(
+                "SELECT f.id, f.sha256, b.company_id FROM file f JOIN message m ON m.id = f.message_id "
+                f"JOIN mailbox b ON b.id = m.mailbox_id WHERE f.sha256 IN ({', '.join('?' * len(wanted))})", wanted):
+            found[row["sha256"]] = row
+        known = {}
+        for key in keys:
+            row = found.get(key)
+            if row is None:
+                legacy = found.get(plain_key(key))
+                row = legacy if legacy is not None and (legacy["company_id"] or 0) == company else None
+            if row is not None:
+                known[key] = row["id"]
+        return known
+
     def _record_failure(self, message, error, fetch_values):
         """Step the resume point back so the next run reads this message again."""
         self.log(f"  ERROR: {error} - not saved, it will be retried next run.")
         self.mailbox_values["last_error"] = str(error)
         received = parse_graph_datetime(message.get("receivedDateTime"))
+        if received and (not self.earliest_failure or received < self.earliest_failure):
+            self.earliest_failure = received
         resume = fetch_values.get("fetch_resume_from")
         if received and (not resume or received < resume):
             fetch_values["fetch_resume_from"] = received

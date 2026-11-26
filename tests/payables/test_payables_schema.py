@@ -14,7 +14,7 @@ EXISTING = {
                 "subject", "sender", "sender_domain", "received", "body_html", "body_text", "skipped_attachments",
                 "state", "attempts", "note", "email_done", "processed_at", "created_at", "updated_at"],
     "file": ["id", "message_id", "filename", "sha256", "path", "doc_class", "extracted", "state", "note", "odoo_id",
-             "read_with", "created_at", "updated_at"],
+             "read_with", "read_limits", "created_at", "updated_at"],
 }
 
 

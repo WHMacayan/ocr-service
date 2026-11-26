@@ -20,7 +20,7 @@
           <tr><td>Tabs</td><td>{% for tab, n in s.tabs %}{{ tab }} ({{ n }}){{ ", " if not loop.last }}{% endfor %}</td></tr>
         </tbody></table>
         {% endif %}
-        {{ decide("report", "Use this report") }}
+        {{ decide("report", "Use this report", p.digest) }}
       {% else %}{{ upload("report", "Upload Booking Report", ".xlsx") }}{% endif %}
     </div>
   </section>

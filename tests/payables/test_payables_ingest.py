@@ -183,3 +183,25 @@ def test_inline_pictures_are_base64_decoded_like_files(db):
     assert Path(saved["path"]).read_bytes() == BIG_PICTURE
     assert saved["size"] == len(BIG_PICTURE)
     assert base64.b64encode(BIG_PICTURE)  # sanity: the fake sends contentBytes, as Graph does
+
+
+def test_a_failed_download_leaves_the_email_unsaved_and_is_read_again(db):
+    """Review F01 for Freight Payables: an email is never kept without a file whose download failed."""
+    class Flaky(PayablesGraph):
+        broken = True
+
+        def attachment(self, message_id, attachment_id):
+            if self.broken and attachment_id == "a2":
+                raise RuntimeError("Graph 503")
+            return super().attachment(message_id, attachment_id)
+
+    graph = Flaky([message(1)], {"graph-1": [attachment("a1", "SOA.xlsx", xlsx()), attachment("a2", "invoices.zip", zipped_pdf())]})
+    box = payables_box(db)
+
+    assert sync(db, graph, box) == "error"
+    assert not rows(db, "payables_message") and not rows(db, "payables_message_file")
+    assert "download failed" in store.mailbox(db, box["id"])["last_error"]
+
+    graph.broken = False
+    assert sync(db, graph, box) == "success"
+    assert len(rows(db, "payables_message")) == 1 and len(rows(db, "payables_message_file")) == 2

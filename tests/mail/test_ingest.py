@@ -24,7 +24,7 @@ def test_new_email_saved_with_its_file(db):
 
     [email] = rows(db, "message")
     [document] = rows(db, "file")
-    assert email["dedupe_key"] == "<msg-1@forwarder.com>"
+    assert email["dedupe_key"] == "<msg-1@forwarder.com>#company1"  # the company of the mailbox is part of the key
     assert email["received"] == "2026-10-26 08:00:00"
     assert email["state"] == "new" and email["body_html"] == "hello"
     assert document["filename"] == "bl.pdf" and document["message_id"] == email["id"]
@@ -115,7 +115,7 @@ def test_failed_message_is_retried_next_run_and_others_saved(db):
     assert sync(db, graph, mailbox(db)) == "error"
 
     box = store.mailbox(db, 1)
-    assert [e["dedupe_key"] for e in rows(db, "message")] == ["<msg-2@forwarder.com>"]
+    assert [e["dedupe_key"] for e in rows(db, "message")] == ["<msg-2@forwarder.com>#company1"]
     assert box["fetch_resume_from"] == "2026-10-20 08:00:00"
     assert box["last_error"] == "Graph down"
 

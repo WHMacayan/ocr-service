@@ -17,22 +17,27 @@ _PLACEHOLDER_RE = re.compile("|".join((
     r"^NOT\s+AVAILABLE$", r"^DDP$")), re.IGNORECASE)
 _CONTAINER_RE = re.compile(r"^[A-Z]{4}\d{7}$")
 _CONTAINER_IN_TEXT_RE = re.compile(r"\b([A-Z]{4})[\s-]?(\d{7})\b", re.IGNORECASE)
+# Every run of spaces and separators between a label and its number is bounded (a long gap is not a label's value)
+# and there is only one such run: patterns with several unbounded runs side by side take cubic time on a label
+# followed by thousands of spaces, which an email body can hold (review v003, slow patterns).
+_BL_GAP = r"(?:[ \t]{0,20}(?:NO\.?|NUMBER))?[\s:#\-]{0,40}"
 _MASTER_BL_RE = re.compile(
-    r"(?:MASTER\s*B/?L|MBL|MBOL)\s*(?:NO\.?|NUMBER|#)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9-]{5,19})\b", re.I)
+    r"(?:MASTER\s{0,10}B/?L|MBL|MBOL)" + _BL_GAP + r"([A-Z0-9][A-Z0-9-]{5,19})\b", re.I)
 _HOUSE_BL_RE = re.compile(
-    r"(?:HOUSE\s*B/?L|HBL|HBOL)\s*(?:NO\.?|NUMBER|#)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9-]{5,19})\b", re.I)
+    r"(?:HOUSE\s{0,10}B/?L|HBL|HBOL)" + _BL_GAP + r"([A-Z0-9][A-Z0-9-]{5,19})\b", re.I)
 # A carrier's single ocean bill printed as "BL/SWB No(s).: HLCU..."; PDF table
 # borders come through as "|".
 _SWB_RE = re.compile(
-    r"BL\s*/\s*SWB\s*(?:\(NO\)S?|NO\(S\)|NOS?|NUMBER|#)\.?[\s:|\-]*([A-Z0-9][A-Z0-9-]{5,19})\b", re.I)
+    r"BL\s{0,5}/\s{0,5}SWB[ \t]{0,20}(?:\(NO\)S?|NO\(S\)|NOS?|NUMBER|#)\.?[\s:|\-]{0,40}([A-Z0-9][A-Z0-9-]{5,19})\b", re.I)
 _BOOKING_LABEL_RE = re.compile(
     r"\b(?:BC|BKG|BK|BOOKING(?:\s+(?:NO|NUMBER|CONFIRMATION))?|HL)[\s:#.-]{1,20}([A-Z]{0,6}\d{6,12})\b",
     re.I)
 # "MBOL COSU6506044390" names a bill of lading, not a booking.
 _BL_CONTEXT_RE = re.compile(
-    r"(?:M?B/?L|HB/?L|MBOL|HBOL|BILL\s+OF\s+LADING|WAYBILL|AWB)\s*(?:NO\.?|NUMBER|#)?\s*[:\-]?\s*$", re.I)
+    r"(?:M?B/?L|HB/?L|MBOL|HBOL|BILL\s{1,5}OF\s{1,5}LADING|WAYBILL|AWB)" + _BL_GAP + r"$", re.I)
+# The prefix stays on its line: letting it cross newlines made a long run of blank lines take quadratic time.
 _QUOTED_REPLY_RE = re.compile(
-    r"^[\s*_>]*(?:From\s*:|发件人|寄件者|-{3,}\s*Original"
+    r"^[ \t*_>]*(?:From\s*:|发件人|寄件者|-{3,}\s*Original"
     r"|On [^\n]{3,160}(?:\n[^\n]{0,160})?wrote:|Sent from|获取 Outlook)", re.I | re.M)
 _CID_RE = re.compile(r"\(cid:\d+\)")
 
@@ -213,33 +218,66 @@ def newest_message_text(body_html):
     return re.sub(r"\n{3,}", "\n\n", text[:match.start()] if match else text).strip()
 
 
-def file_text(raw, max_pages):
-    """Text of a PDF or image: the text layer first, OCR when there is none.
+# What OCR says about a file that is simply not a readable document: judged unreadable, not retried. Any other
+# OCR failure (memory, a timeout, a program that crashed) may pass, so the file is retried instead of being
+# skipped for good as having no text (review F09).
+_DOCUMENT_PROBLEMS = {"PDFPageCountError", "PDFSyntaxError", "UnidentifiedImageError", "DecompressionBombError",
+                      "DecompressionBombWarning"}
 
-    Raises RuntimeError when OCR is needed but tesseract/poppler is missing,
-    so the file is retried rather than judged unreadable.
-    """
-    text = ""
-    if raw.startswith(b"%PDF-"):
-        try:
-            with pdfplumber.open(io.BytesIO(raw)) as pdf:
-                text = "\n".join(page.extract_text() or "" for page in pdf.pages[:max_pages]).strip()
-        except Exception as exc:  # a damaged PDF is a document problem
-            _logger.warning("PDF text failed: %s", exc)
-    # pdfplumber writes "(cid:N)" for glyphs of fonts it cannot map.
-    if text and sum(map(len, _CID_RE.findall(text))) / len(text) < 0.3:
-        return text
+
+def _readable(text):
+    """A page whose text layer says something: some text, and not mostly "(cid:N)" for glyphs it could not map."""
+    text = (text or "").strip()
+    return bool(text) and sum(map(len, _CID_RE.findall(text))) / len(text) < 0.3
+
+
+def _pdf_pages(raw, max_pages):
+    """The text layer of each page read (up to ``max_pages``), or None when the PDF cannot be opened."""
+    try:
+        with pdfplumber.open(io.BytesIO(raw)) as pdf:
+            return [page.extract_text() or "" for page in pdf.pages[:max_pages]]
+    except Exception as exc:  # a damaged PDF is a document problem
+        _logger.warning("PDF text failed: %s", exc)
+        return None
+
+
+def _ocr(raw, pdf_pages=None):
+    """OCR text of an image, or of the given 1-based pages of a PDF (all up to ``max`` when None)."""
     try:
         import pytesseract
         from pdf2image import convert_from_bytes
         from PIL import Image
-        pages = (convert_from_bytes(raw, last_page=max_pages) if raw.startswith(b"%PDF-")
-                 else [Image.open(io.BytesIO(raw))])
-        return "\n".join(pytesseract.image_to_string(page) for page in pages).strip()
+        if raw.startswith(b"%PDF-"):
+            images = [image for number in pdf_pages for image in convert_from_bytes(raw, first_page=number,
+                                                                                    last_page=number)]
+        else:
+            images = [Image.open(io.BytesIO(raw))]
+        return [pytesseract.image_to_string(image).strip() for image in images]
     except ImportError as exc:
         raise RuntimeError(f"OCR libraries are not installed: {exc}") from exc
     except Exception as exc:
         if type(exc).__name__ in ("TesseractNotFoundError", "PDFInfoNotInstalledError"):
             raise RuntimeError(f"OCR programs are not installed: {exc}") from exc
-        _logger.warning("OCR failed: %s", exc)
-        return ""
+        if type(exc).__name__ in _DOCUMENT_PROBLEMS:
+            _logger.warning("OCR cannot read the file: %s", exc)
+            return [""] * (len(pdf_pages) if pdf_pages is not None else 1)
+        raise RuntimeError(f"OCR failed, the file will be tried again: {exc}") from exc
+
+
+def file_text(raw, max_pages):
+    """Text of a PDF or image, page by page: a page's text layer when it has one, OCR for a page that has none
+    (a scan inside a PDF whose other pages are text, review F09).
+
+    Raises RuntimeError when OCR is needed but tesseract/poppler is missing or failed in a way that may pass,
+    so the file is retried rather than judged unreadable.
+    """
+    if not raw.startswith(b"%PDF-"):
+        return "\n".join(_ocr(raw)).strip()
+    pages = _pdf_pages(raw, max_pages)
+    if pages is None:  # not openable as text: OCR what poppler can render
+        return "\n".join(_ocr(raw, list(range(1, max_pages + 1)))).strip()
+    missing = [number for number, text in enumerate(pages, 1) if not _readable(text)]
+    if missing:
+        for number, text in zip(missing, _ocr(raw, missing)):
+            pages[number - 1] = text
+    return "\n".join(pages).strip()
